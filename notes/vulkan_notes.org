@@ -1,0 +1,82 @@
+Notes on Vulkan
+
+* Vulkan Tutorial
+  - Notes on the PDF version of the tutorial. Available at: https://vulkan-tutorial.com/
+
+
+** Moving Parts Overview - p. 8
+
+   - Very high level overview of components required to get images on the screen
+     
+   - 1. Instance / physical device selection
+     
+     - Create a VkInstance, describing the context of the application
+     - Once created: query available hardware
+     - Select physical devices (VkPhysicalDevice)
+     - Query device properties (e.g., memory)
+
+   - 2. Logical device / family queues
+     
+     - Logical device: set device features (e.g., floats / doubles)
+     - Set up queues - most Vulkan commands are async
+     - Queue families line up with logical queue ops
+       - e.g., graphics / compute / memory
+     
+
+   - 3. Window interface / swap chain
+
+     - Create window for rendering
+     - Need: surface, swap chain
+     - Totally platform agnostic!
+     - Swap chain: collection of render targets
+       - Makes sure we aren't rendering what's actually on the screen
+       - Request images from chain, draw on them, return them for presentation
+
+   - 4. Image views and framebuffers:
+
+     - Image view: specifies part of image to be used
+     - Framebuffer: which view is used for color / depth / stencil
+     - Preemtively create image view / FB, select the right one when drawing
+
+   - 5. Render passes
+
+     - Type of image for each render op, how it is used
+     - Framebuffer binds actual image to slot
+
+   - 6. Graphics pipeline
+     
+     - VkPipeline object
+     - Describes configurable GFX card state
+     - Shader modules, render targets...
+     - Pipeline MUST be layed out in advance! But you can swap them out
+
+   - 7. Command pools and command buffers
+
+     - Drawing ops are submitted to queue...
+     - Must first be recoreded in command buffer
+
+   - 8. Main loop
+
+     - Acquire image from swap chain
+     - Select command buffer, submit to queue
+     - Return image to swap chain for presentation
+     - Async! Need synchro primitives
+   
+** Operation overview:
+
+   - Create VkInstance
+   - Select GFX device
+   - Create device, queue
+   - Create window, surface, swap chain
+   - Wrap chain in VkImageView
+   - Create render pass - rendertargets, usage
+   - Create framebuffers
+   - Set up pipeline
+   - Allocate command buffers
+   - Draw frames
+
+** Validation layers
+
+   - Code layers between API and driver
+   - You can disable them for release
+   - Can write your own, we're using the standard LunarG stuff
