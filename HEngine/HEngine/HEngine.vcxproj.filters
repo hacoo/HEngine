@@ -26,5 +26,11 @@
     <ClInclude Include="Source\HelloTriangleApplication.h">
       <Filter>Source Files\Source</Filter>
     </ClInclude>
+    <ClInclude Include="Source\VulkanDestructWrapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\typedefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
