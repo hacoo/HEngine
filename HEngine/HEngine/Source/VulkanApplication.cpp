@@ -6,10 +6,17 @@
 
 void VulkanApplication::run()
 {
+	// Create glfw window
 	initWindow();
 
-	initVulkan();
-
+	// Vulkan setup
+	initVulkanInstance();
+	setupDebugCallback();
+	initSurface();
+	pickPhysicalDevice();
+	initQueuesAndDevice();
+	initSwapchain();
+	
 	mainLoop();
 
 	cleanup();
@@ -30,7 +37,7 @@ void VulkanApplication::initWindow()
 	window = glfwCreateWindow(width, height, "Hello, Triangle!", nullptr, nullptr);
 }
 
-void VulkanApplication::initVulkan()
+void VulkanApplication::initVulkanInstance()
 {
 	if (enableValidationLayers && !checkValidationLayerSupport())
 	{
@@ -98,7 +105,10 @@ void VulkanApplication::initVulkan()
 			throw std::runtime_error("vkCreateInstance failed -- reason unknown");
 		}
 	}
+}
 
+void VulkanApplication::setupDebugCallback()
+{
 	// Set up debug callback
 	if (enableValidationLayers)
 	{
@@ -106,13 +116,16 @@ void VulkanApplication::initVulkan()
 		callbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
 		callbackCreateInfo.flags = debugFlags;
 		callbackCreateInfo.pfnCallback = debugCallback;
-		result = CreateDebugReportCallbackEXT(instance, &callbackCreateInfo, nullptr, &callback);
+		VkResult result = CreateDebugReportCallbackEXT(instance, &callbackCreateInfo, nullptr, &callback);
 		if (result != VK_SUCCESS)
 		{
 			throw std::runtime_error("Vulkan initialization failed - could not register debug callback");
 		}
-	}
+	}	
+}
 
+void VulkanApplication::initSurface()
+{
 	// Create the window surface. This is platform-dependent.
 	VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = { };
 	surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -132,7 +145,10 @@ void VulkanApplication::initVulkan()
 	{
         throw std::runtime_error("GLFW failed to create window surface!");
     }
+}
 
+void VulkanApplication::pickPhysicalDevice()
+{
 	// Pick physical device
 	uint32_t deviceCount = 0;
 	vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
@@ -168,7 +184,10 @@ void VulkanApplication::initVulkan()
 		
 	std::cout << "Selected device: " << std::endl;
 	std::cout << getDeviceDescriptionString(physicalDevice, surface) << std::endl;
+}
 
+void VulkanApplication::initQueuesAndDevice()
+{
 	// Get queue indices for the selected device
 	if (!queueIndices.initialize(physicalDevice, surface))
 	{
@@ -215,6 +234,20 @@ void VulkanApplication::initVulkan()
 		deviceCreateInfo.ppEnabledLayerNames = nullptr;
 	}
 
+	// Initialize the device
+	if (vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Could not create Vulkan logical device");
+	}
+
+	// Get final queue handles from device
+	// Third argument is offset if storing in array
+	vkGetDeviceQueue(device, queueIndices.graphics, 0, &graphicsQueue);	 
+	vkGetDeviceQueue(device, queueIndices.present, 0, &presentQueue);
+}
+
+void VulkanApplication::initSwapchain()
+{
 	// Set up swap chain
 	SwapChainSupportInfo swapChainInfo;
 	swapChainInfo.initialize(physicalDevice, surface);
@@ -275,17 +308,6 @@ void VulkanApplication::initVulkan()
 	// clip unrended pixels - improves performance, bad if you need access to clipped pixels
 	swapchainCreateInfo.clipped = VK_TRUE;
 
-	// Initialize the device
-	if (vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Could not create Vulkan logical device");
-	}
-
-	// Get final queue handles from device
-	// Third argument is offset if storing in array
-	vkGetDeviceQueue(device, queueIndices.graphics, 0, &graphicsQueue);	 
-	vkGetDeviceQueue(device, queueIndices.present, 0, &presentQueue);
-
 	// Make swap chain
 	if (vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain) != VK_SUCCESS)
 	{
@@ -298,7 +320,7 @@ void VulkanApplication::initVulkan()
 	vkGetSwapchainImagesKHR(device, swapchain, &imageCount, swapchainImages.data());
 
 	swapchainFormat = surfaceFormat.format;
-	swapchainExtent = extent;
+	swapchainExtent = extent;	
 }
 
 uint32_t VulkanApplication::calcSuitabilityScore(const VkPhysicalDevice& device, const VkSurfaceKHR& surface) const

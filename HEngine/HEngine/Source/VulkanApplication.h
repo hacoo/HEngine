@@ -186,11 +186,25 @@ private: // data
 	VkQueue presentQueue;
 
 	void initWindow();
-	
-	// Create Vulkan instance and return a pointer to it. Throws std::runtime_error 
-	// on failure.
-	void initVulkan();
-	
+		
+	// Check validation layer support and initialize the Vulkan instance
+	void initVulkanInstance();
+
+	// Set up the debug callback
+	void setupDebugCallback();
+			
+	// Set up window surface to draw on (platform dependent)
+	void initSurface();
+
+	// Decides which physical device to use. Doesn't set up logical device yet.
+	void pickPhysicalDevice();
+
+	// Set up logical device and queues. Creates the device.
+	void initQueuesAndDevice();
+
+	// set up the swapchain
+	void initSwapchain();
+
 	uint32_t calcSuitabilityScore(const VkPhysicalDevice& device, const VkSurfaceKHR& surface) const;
 	
 	std::string getDeviceDescriptionString(const VkPhysicalDevice& device, 
