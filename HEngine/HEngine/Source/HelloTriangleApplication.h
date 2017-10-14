@@ -14,7 +14,7 @@
 #include <GLFW\glfw3.h>
 
 // Requested debug flags
-const VkDebugReportFlagsEXT debugFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT 
+const VkDebugReportFlagsEXT debugFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT
 | VK_DEBUG_REPORT_WARNING_BIT_EXT
 | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
 
@@ -38,9 +38,13 @@ public: // data
 	
 public: // methods
 
-	HelloTriangleApplication() { }
+	HelloTriangleApplication()
+		:
+		physicalDevice(VK_NULL_HANDLE)
+	{ }
 
-	~HelloTriangleApplication() { }
+	~HelloTriangleApplication() 
+	{ }
 
 	// Copy / moves disallowed
 	HelloTriangleApplication(const HelloTriangleApplication& other)          = delete;
@@ -59,6 +63,55 @@ public: // methods
 		cleanup();
 	}
 
+public: // Classes
+
+	// Records the queue family indices for this machine
+	struct QueueFamilyIndices
+	{
+	public:
+		QueueFamilyIndices()
+			:
+			graphics(-1),
+			queueFamilyCount(0)
+		{ }
+		
+		// Checks if all required indices have been filled in
+		bool isValid()
+		{
+			if (graphics < 0)
+			{
+				return false;
+			}
+			
+			return true;
+		}
+
+		// Attempt to fill in this struct using device.
+		// If any required queues aren't found, returns false.		
+		bool initialize(VkPhysicalDevice& device)
+		{
+			vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+			std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+			vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+			for (int i = 0; i < queueFamilies.size(); ++i)
+			{
+				// check graphics
+				if (queueFamilies[i].queueCount > 0 &&
+					queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+				{
+					graphics = i;
+				}
+			}
+
+			return isValid();
+		}
+
+		// Indices of queues used in this application
+		int graphics;
+		uint32_t queueFamilyCount;
+	};
+
 private: // data
 
 	GLFWwindow* window = nullptr;
@@ -68,6 +121,12 @@ private: // data
 	// Vulkan stuff:
 	VkInstance instance;
 	VkDebugReportCallbackEXT callback;
+	VkPhysicalDevice physicalDevice;
+	VkDevice device;
+	QueueFamilyIndices queueIndices;
+
+	// queues:
+	VkQueue graphicsQueue;
 
 private: // methods
 	
@@ -109,18 +168,18 @@ private: // methods
 		uint32_t requiredExtensionCount = static_cast<uint32_t>(requiredExtensions.size());
 		
 		// Instance creation context - specify extensions, validation layers
-		VkInstanceCreateInfo createInfo    = { };
-		createInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-		createInfo.pApplicationInfo        = &appInfo;
-		createInfo.enabledLayerCount       = 0;
-		createInfo.enabledExtensionCount   = requiredExtensionCount;
-		createInfo.ppEnabledExtensionNames = requiredExtensions.data();
+		VkInstanceCreateInfo instanceCreateInfo    = { };
+		instanceCreateInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		instanceCreateInfo.pApplicationInfo        = &appInfo;
+		instanceCreateInfo.enabledLayerCount       = 0;
+		instanceCreateInfo.enabledExtensionCount   = requiredExtensionCount;
+		instanceCreateInfo.ppEnabledExtensionNames = requiredExtensions.data();
 
 		// Set up validation layers
 		if (enableValidationLayers)
 		{
-			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-			createInfo.ppEnabledLayerNames = validationLayers.data();
+			instanceCreateInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+			instanceCreateInfo.ppEnabledLayerNames = validationLayers.data();
 		}
 
 		// Print available / requested extensions
@@ -140,11 +199,10 @@ private: // methods
 		for (size_t i = 0; i < requiredExtensions.size(); ++i)
 		{
 			std::cout << " " << requiredExtensions[i] << std::endl;
-		}
-		std::cout << std::endl;
+		}	std::cout << std::endl;
 
 		// Create the instance
-		VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+		VkResult result = vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
 
 		if (result != VK_SUCCESS)
 		{
@@ -171,7 +229,149 @@ private: // methods
 				throw std::runtime_error("Vulkan initialization failed - could not register debug callback");
 			}
 		}
+
+		// Pick physical device
+		uint32_t deviceCount = 0;
+		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+
+		if (deviceCount == 0)
+		{
+			throw std::runtime_error("Could not find a GPU that supports Vulkan");
+		}
+
+		std::vector<VkPhysicalDevice> devices(deviceCount);
+		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+		
+		uint32_t bestScore = 0;
+		VkPhysicalDevice& bestDevice = devices[0];
+		std::cout << "Available devices: " << std::endl << std::endl;
+		for (VkPhysicalDevice& device : devices)
+		{
+			std::cout << getDeviceDescriptionString(device) << std::endl;
+			uint32_t score = calcSuitabilityScore(device);
+			if (score > bestScore)
+			{
+				bestDevice = device;
+				bestScore = score;
+			}
+		}
+
+		if (bestScore == 0)
+		{
+			throw std::runtime_error("Failed to find suitable GPU");
+		}
+
+		physicalDevice = bestDevice;
+		
+		std::cout << "Selected device: " << std::endl;
+		std::cout << getDeviceDescriptionString(physicalDevice) << std::endl;
+
+		// Get queue indices for the selected device
+		if (!queueIndices.initialize(physicalDevice))
+		{
+			throw std::runtime_error("Could not find all required queue families");
+		}
+
+		// Create the logical device
+		
+		// Create graphics queue. We only need 1. Most drivers support very few queues currently.
+		VkDeviceQueueCreateInfo queueCreateInfo = { };
+		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queueCreateInfo.queueFamilyIndex = queueIndices.graphics;
+		queueCreateInfo.queueCount = 1;
+
+		// Required even if only one queue
+		float queuePriority = 1.0f;
+		queueCreateInfo.pQueuePriorities = &queuePriority;
+
+		// Device features we want to use. For now, everything is turned off.
+		VkPhysicalDeviceFeatures deviceFeatures = { };
+		
+		VkDeviceCreateInfo deviceCreateInfo = { };
+		deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+		deviceCreateInfo.queueCreateInfoCount = 1;
+		deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
+		
+		// Enable device-specific extensions (none for now)
+		deviceCreateInfo.enabledExtensionCount = 0;
+		deviceCreateInfo.ppEnabledExtensionNames = nullptr;
+
+		// Enable validation layers
+		if (enableValidationLayers)
+		{
+			deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+			deviceCreateInfo.ppEnabledLayerNames = validationLayers.data();
+		} 
+		else
+		{
+			deviceCreateInfo.enabledLayerCount = 0;
+			deviceCreateInfo.ppEnabledLayerNames = nullptr;
+		}
+
+		if (vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Could not create Vulkan logical device");
+		}
+
+		// Get final queue handles from device
+		// Third argument is offset if storing in array
+		vkGetDeviceQueue(device, queueIndices.graphics, 0, &graphicsQueue);
+	 
 	}
+
+	uint32_t calcSuitabilityScore(const VkPhysicalDevice& device) const
+	{
+		VkPhysicalDeviceProperties deviceProperties;
+		VkPhysicalDeviceFeatures deviceFeatures;
+		vkGetPhysicalDeviceProperties(device, &deviceProperties);
+		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+		// Disqualifiers
+		if (deviceFeatures.geometryShader == false)
+		{
+			return 0;
+		}
+
+		uint32_t score = 0;
+
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+		{
+			score += 20000;
+		}
+	   
+		score += deviceProperties.limits.maxImageDimension2D;
+		return score;
+	}
+	
+	// Displays 
+	std::string getDeviceDescriptionString(const VkPhysicalDevice& device)
+	{
+		VkPhysicalDeviceProperties deviceProperties;
+		VkPhysicalDeviceFeatures deviceFeatures;
+		vkGetPhysicalDeviceProperties(device, &deviceProperties);
+		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+		std::stringstream sstream;
+		sstream << "Vulkan device description: " << std::endl;
+		sstream << "  Name: " << deviceProperties.deviceName << std::endl;				
+		sstream << "  isDiscrete: "
+			<< (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+			? "Yes" : "No")
+			<< std::endl;
+		sstream << "  Max 2D Image Dimension: " << deviceProperties.limits.maxImageDimension2D 
+			<< std::endl;
+		sstream << "  Geometry shaders supported: "
+			<< (deviceFeatures.geometryShader ? "Yes" : "No")
+			<< std::endl;
+		sstream << "  Tesselation shaders supported: "
+			<< (deviceFeatures.tessellationShader ? "Yes" : "No")
+			<< std::endl;
+		sstream << "  Suitability score: " << calcSuitabilityScore(device) << std::endl;
+
+		return sstream.str();
+	}
+	
 
 	// Helper function, looks up address of vkCreateDebugReportCallbackEXT as this is not automatically loaded
 	VkResult CreateDebugReportCallbackEXT(VkInstance instance, const VkDebugReportCallbackCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugReportCallbackEXT* pCallback) 
@@ -320,12 +520,16 @@ private: // methods
 
 	void cleanup()
 	{
+		// Clean up GLFW:
+		if (window != nullptr)
+		{
+			glfwDestroyWindow(window);
+		}
+		glfwTerminate();
+
 		// Clean up Vulkan:
 		DestroyDebugReportCallbackEXT(instance, callback, nullptr);
+		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
-
-		// Clean up GLFW:
-		glfwDestroyWindow(window);
-		glfwTerminate();
 	}
 };
