@@ -118,6 +118,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>C:\Users\henry\Documents\Visual Studio 2017\Libraries\vld\include;C:\Users\henry\code\hengine\HEngine\HEngine\Source;C:\VulkanSDK\1.0.61.1\Include;C:\Users\henry\Documents\Visual Studio 2017\Libraries\glfw-3.2.1.bin.WIN64\include;C:\Users\henry\Documents\Visual Studio 2017\Libraries\glm;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/D "NOMINMAX"</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -154,6 +155,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>C:\Users\henry\Documents\Visual Studio 2017\Libraries\vld\include;C:\Users\henry\code\hengine\HEngine\HEngine\Source;C:\VulkanSDK\1.0.61.1\Include;C:\Users\henry\Documents\Visual Studio 2017\Libraries\glfw-3.2.1.bin.WIN64\include;C:\Users\henry\Documents\Visual Studio 2017\Libraries\glm;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/D "NOMINMAX"</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

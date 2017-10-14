@@ -2,6 +2,7 @@
 
 // Defines vulkan application, 
 
+#define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan\vulkan.h>
 
 #include <iostream>
@@ -9,11 +10,11 @@
 #include <functional>
 #include <vector>
 #include <string>
-#include <unordered_map>
-#include <sstream>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW\glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW\glfw3native.h>
 
 // Requested debug flags
 const VkDebugReportFlagsEXT debugFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT
@@ -25,6 +26,12 @@ const VkDebugReportFlagsEXT debugFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT
 const std::vector<const char*> validationLayers =
 {
 "VK_LAYER_LUNARG_standard_validation"
+};
+
+// Required device extensions
+const std::vector<const char*> deviceExtensions =
+{
+VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 #ifdef NDEBUG
@@ -57,13 +64,15 @@ public: // methods
 	void run();
 
 public: // classes
-		// Records the queue family indices for this machine
+
+	// Records the queue family indices for this machine
 	struct QueueFamilyIndices
 	{
 	public:
 		QueueFamilyIndices()
 			:
 			graphics(-1),
+			present(-1),
 			queueFamilyCount(0)
 		{ }
 		
@@ -74,13 +83,17 @@ public: // classes
 			{
 				return false;
 			}
+			if (present < 0)
+			{
+				return false;
+			}
 			
 			return true;
 		}
 
 		// Attempt to fill in this struct using device.
 		// If any required queues aren't found, returns false.		
-		bool initialize(VkPhysicalDevice& device)
+		bool initialize(VkPhysicalDevice& device, VkSurfaceKHR& surface)
 		{
 			vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 			std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -94,16 +107,60 @@ public: // classes
 				{
 					graphics = i;
 				}
+
+				// check present
+				VkBool32 presentSupport;
+				vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+
+				if (queueFamilies[i].queueCount > 0 && presentSupport)
+				{
+					present = i;
+				}
 			}
 
 			return isValid();
 		}
 
+	public:
 		// Indices of queues used in this application
 		int graphics;
+		int present;
 		uint32_t queueFamilyCount;
 	};
 
+	struct SwapChainSupportInfo
+	{
+	public:
+		
+		VkSurfaceCapabilitiesKHR capabilities;
+		std::vector <VkSurfaceFormatKHR> formats;
+		std::vector <VkPresentModeKHR> presentModes;
+
+	public:
+		bool initialize(const VkPhysicalDevice& device, const VkSurfaceKHR& surface)
+		{
+			vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &capabilities);
+			uint32_t formatCount;
+			vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
+
+			if (formatCount != 0) 
+			{
+				formats.resize(formatCount);
+				vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, formats.data());
+			}
+
+			uint32_t presentModeCount;
+			vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
+
+			if (presentModeCount != 0) 
+			{
+				presentModes.resize(presentModeCount);
+				vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, presentModes.data());
+			}
+
+			return true;
+		}
+	};
 
 private: // data
 	GLFWwindow* window;
@@ -116,9 +173,17 @@ private: // data
 	VkPhysicalDevice physicalDevice;
 	VkDevice device;
 	QueueFamilyIndices queueIndices;
+	VkSurfaceKHR surface;
+
+	// swapchain
+	VkSwapchainKHR swapchain;
+	std::vector<VkImage> swapchainImages;
+	VkFormat swapchainFormat;
+	VkExtent2D swapchainExtent;
 
 	// queues:
 	VkQueue graphicsQueue;
+	VkQueue presentQueue;
 
 	void initWindow();
 	
@@ -126,9 +191,10 @@ private: // data
 	// on failure.
 	void initVulkan();
 	
-	uint32_t calcSuitabilityScore(const VkPhysicalDevice& device) const;
+	uint32_t calcSuitabilityScore(const VkPhysicalDevice& device, const VkSurfaceKHR& surface) const;
 	
-	std::string getDeviceDescriptionString(const VkPhysicalDevice& device) const;
+	std::string getDeviceDescriptionString(const VkPhysicalDevice& device, 
+		const VkSurfaceKHR& surface) const;
 	
 	// Helper function, looks up address of vkCreateDebugReportCallbackEXT as this is not automatically loaded
 	VkResult CreateDebugReportCallbackEXT(VkInstance instance, const VkDebugReportCallbackCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugReportCallbackEXT* pCallback);
@@ -139,7 +205,16 @@ private: // data
 	std::vector<const char*> getRequiredExtensions();
 
 	// Check if all requested validation layers are present. If not, returns false.
-	bool checkValidationLayerSupport();
+	bool checkValidationLayerSupport() const;
+
+	bool checkDeviceExtensionSupport(const VkPhysicalDevice& device) const;
+
+	static VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+
+	// Choose the swap chain presentation mode. Currently using mailbox so we can use tripple buffering.
+	static VkPresentModeKHR chooseSwapChainPresentMode(const std::vector<VkPresentModeKHR> availablePresentModes);
+
+	static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height);
 
 	// Callback for validation layers
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
