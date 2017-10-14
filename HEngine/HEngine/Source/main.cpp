@@ -1,6 +1,6 @@
 
 #include <iostream>
-#include <HelloTriangleApplication.h>
+#include <VulkanApplication.h>
 
 #ifdef _DEBUG
 #define _CRTDBG_MAP_ALLOC
@@ -19,7 +19,7 @@ int main()
 	_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_DEBUG);
 #endif _DEBUG
 
-	HelloTriangleApplication app;
+	VulkanApplication app;
 
 	try
 	{

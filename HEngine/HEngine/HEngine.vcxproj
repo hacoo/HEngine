@@ -20,10 +20,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\main.cpp" />
+    <ClCompile Include="Source\VulkanApplication.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Source\HelloTriangleApplication.h" />
     <ClInclude Include="Source\typedefs.h" />
+    <ClInclude Include="Source\VulkanApplication.h" />
     <ClInclude Include="Source\VulkanDestructWrapper.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

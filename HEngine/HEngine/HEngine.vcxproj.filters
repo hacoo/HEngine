@@ -21,15 +21,18 @@
     <ClCompile Include="Source\main.cpp">
       <Filter>Source Files\Source</Filter>
     </ClCompile>
+    <ClCompile Include="Source\VulkanApplication.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Source\HelloTriangleApplication.h">
-      <Filter>Source Files\Source</Filter>
-    </ClInclude>
     <ClInclude Include="Source\VulkanDestructWrapper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Source\typedefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\VulkanApplication.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
