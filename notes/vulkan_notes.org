@@ -80,3 +80,22 @@ Notes on Vulkan
    - Code layers between API and driver
    - You can disable them for release
    - Can write your own, we're using the standard LunarG stuff
+** Graphics pipeline
+   - Vulkan supports configurable pipelines, but we'll be setting up the following:
+     
+     - Vertex buffer ->
+     - Input assembler (collects raw vertex data) ->
+     - Vertex shader (per-vertex shader, apply transform to screen space) ->
+     - Tesselation (geometry subdivision) ->
+     - Geo shader (Runs on every geo primitive - e.g. lines, triangles. Flexible, but slow, not used much) ->
+     - Rasterization (Turn geometry into pixel fragments. Culls.) ->
+     - Fragment shader (Invoked on surviving fragments. Decided which framebuffer, color, depth) ->
+     - Color Blending (How to mix overlapping fragments) ->
+     - Framebuffer
+
+   - Of these, Color Blending and Rasterization are NOT programmable (at least in this setup)
+   - Vulkan GFX pipeline is immutable. To change shaders, you must change the pipeline.
+     - Therefore, you MUST set up pipelines in advance
+     - However, it's faster - the driver can optimize far better
+       
+       
