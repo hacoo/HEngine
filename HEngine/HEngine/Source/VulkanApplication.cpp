@@ -323,6 +323,33 @@ void VulkanApplication::initSwapchain()
 	swapchainExtent = extent;	
 }
 
+void VulkanApplication::initImageViews()
+{
+	swapchainViews.resize(swapchainImages.size());
+
+	for (size_t i = 0; i < swapchainViews.size(); ++i)
+	{
+		VkImageViewCreateInfo createInfo = { };
+		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		createInfo.image = swapchainImages[i];
+
+		// How this image view is interpreted -- 1D texture, 2D texture, or 3D texture / cube map
+		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		createInfo.format = swapchainFormat;
+
+		// You can swizzle image bits around if you want
+		createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+		if (vkCreateImageView(device, &createInfo, nullptr, &swapchainViews[i]) != VK_SUCCESS) 
+		{
+			throw std::runtime_error("failed to create image views!");
+		}
+	}
+}
+
 uint32_t VulkanApplication::calcSuitabilityScore(const VkPhysicalDevice& device, const VkSurfaceKHR& surface) const
 {
 	VkPhysicalDeviceProperties deviceProperties;
@@ -620,6 +647,11 @@ void VulkanApplication::mainLoop()
 void VulkanApplication::cleanup()
 {
 	// Clean up swapchain first, it may require glfw to still be alive (not sure)
+	for (auto& view : swapchainViews)
+	{
+		vkDestroyImageView(device, view, nullptr);
+	}
+
 	vkDestroySwapchainKHR(device, swapchain, nullptr);
 
 	// Clean up GLFW:

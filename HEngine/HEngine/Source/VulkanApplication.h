@@ -178,6 +178,7 @@ private: // data
 	// swapchain
 	VkSwapchainKHR swapchain;
 	std::vector<VkImage> swapchainImages;
+	std::vector<VkImageView> swapchainViews;
 	VkFormat swapchainFormat;
 	VkExtent2D swapchainExtent;
 
@@ -204,6 +205,8 @@ private: // data
 
 	// set up the swapchain
 	void initSwapchain();
+
+	void initImageViews();
 
 	uint32_t calcSuitabilityScore(const VkPhysicalDevice& device, const VkSurfaceKHR& surface) const;
 	
