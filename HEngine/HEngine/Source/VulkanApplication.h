@@ -193,6 +193,7 @@ private: // data
 	// Pipeline
 	VkRenderPass renderPass;
 	VkPipelineLayout pipelineLayout;
+	VkPipeline graphicsPipeline;
 
 private: // methods
 

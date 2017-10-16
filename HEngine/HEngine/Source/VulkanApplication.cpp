@@ -548,9 +548,38 @@ void VulkanApplication::initGraphicsPipeline()
 		throw std::runtime_error("Failed to create pipeline layout");
 	}
 
-	
+	// Create the actual pipeline:	
+	VkGraphicsPipelineCreateInfo pipelineInfo = { };
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.stageCount = 2;
+	pipelineInfo.pStages = shaderStages;
+	pipelineInfo.pVertexInputState = &vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssemblyInfo;
+	pipelineInfo.pViewportState = &viewportStateInfo;
+	pipelineInfo.pRasterizationState = &rasterizerInfo;
+	pipelineInfo.pMultisampleState = &multisampleInfo;
+	pipelineInfo.pDepthStencilState = nullptr;
+	pipelineInfo.pColorBlendState = &colorBlendingInfo;
+	pipelineInfo.pDynamicState = nullptr;
+	pipelineInfo.layout = pipelineLayout;
+	pipelineInfo.renderPass = renderPass;
+	pipelineInfo.subpass = 0; // index of subpass for this pipeline
 
+	// Base pipeline handle allows 'inheritance' from a parent pipeline -- switching
+	// between similar pipelines, with the same parent, is faster
+	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+	pipelineInfo.basePipelineIndex = -1;
+	// pipelineInfo.flags |= VK_PIPELINE_CREATE_DERIVATIVE_BIT; // turn on to use inheritance
 
+	if (vkCreateGraphicsPipelines(device,
+		VK_NULL_HANDLE,
+		1,
+		&pipelineInfo,
+		nullptr,
+		&graphicsPipeline) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create graphics pipeline!");
+	}
 }
 
 VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
@@ -866,6 +895,7 @@ void VulkanApplication::mainLoop()
 
 void VulkanApplication::cleanup()
 {
+	vkDestroyPipeline(device, graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 	vkDestroyRenderPass(device, renderPass, nullptr);
 
