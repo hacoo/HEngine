@@ -1,6 +1,9 @@
 
 # Created by https://www.gitignore.io/api/vim,c++,linux,cmake,clion,emacs,windows,visualstudio
 
+### GLSL / SPIR-V ###
+*.spv
+
 ### C++ ###
 # Prerequisites
 *.d
