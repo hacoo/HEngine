@@ -191,6 +191,7 @@ private: // data
 	VkShaderModule fragShaderModule;
 
 	// Pipeline
+	VkRenderPass renderPass;
 	VkPipelineLayout pipelineLayout;
 
 private: // methods
@@ -220,6 +221,9 @@ private: // methods
 
 	// Set up image views to use in swapchain
 	void initImageViews();
+
+	// Create render passes - how color and depth buffers are used
+	void createRenderPass();
 
 	// Configure pipeline	
 	void initGraphicsPipeline();

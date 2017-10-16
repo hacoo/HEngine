@@ -11,14 +11,17 @@ void VulkanApplication::run()
 	initWindow();
 
 	// Vulkan setup
+	std::cout << "Initializing Vulkan..." << std::endl;
 	initVulkanInstance();
 	setupDebugCallback();
 	initSurface();
 	pickPhysicalDevice();
 	initQueuesAndDevice();
 	initSwapchain();
+	createRenderPass();
 	initGraphicsPipeline();
-	
+	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
+
 	mainLoop();
 
 	cleanup();
@@ -349,6 +352,45 @@ void VulkanApplication::initImageViews()
 		{
 			throw std::runtime_error("failed to create image views!");
 		}
+	}
+}
+
+void VulkanApplication::createRenderPass()
+{
+	// Set up color buffer -- just one, since we aren't multisampling
+	VkAttachmentDescription colorAttachment = { };
+	colorAttachment.format = swapchainFormat;
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // clear to black before rendering
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Rendered contents stay in memory
+
+	// Not currently using stencil buffer
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	
+	// Indicate that final layout will be used in swapchain
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; 
+
+	VkAttachmentReference colorAttachmentRefInfo = { };
+	colorAttachmentRefInfo.attachment = 0;
+	colorAttachmentRefInfo.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass = { };
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRefInfo;
+
+	VkRenderPassCreateInfo renderPassInfo = { };
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = 1;
+	renderPassInfo.pAttachments = &colorAttachment;
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+
+	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Coult not create render pass");
 	}
 }
 
@@ -825,6 +867,7 @@ void VulkanApplication::mainLoop()
 void VulkanApplication::cleanup()
 {
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+	vkDestroyRenderPass(device, renderPass, nullptr);
 
 	// Clean up swapchain first, it may require glfw to still be alive (not sure)
 	for (auto& view : swapchainViews)
