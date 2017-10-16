@@ -17,9 +17,9 @@
 #include <GLFW\glfw3native.h>
 
 // Requested debug flags
-const VkDebugReportFlagsEXT debugFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT
-| VK_DEBUG_REPORT_WARNING_BIT_EXT
-| VK_DEBUG_REPORT_DEBUG_BIT_EXT;
+const VkDebugReportFlagsEXT debugFlags = // VK_DEBUG_REPORT_DEBUG_BIT_EXT |
+VK_DEBUG_REPORT_WARNING_BIT_EXT |
+VK_DEBUG_REPORT_ERROR_BIT_EXT;
 
 
 // Requested validation layers
@@ -186,6 +186,13 @@ private: // data
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
 
+	// Shader modules
+	VkShaderModule vertShaderModule;
+	VkShaderModule fragShaderModule;
+
+	// Setup functions
+
+	// Create glfw window
 	void initWindow();
 		
 	// Check validation layer support and initialize the Vulkan instance
@@ -206,7 +213,16 @@ private: // data
 	// set up the swapchain
 	void initSwapchain();
 
+	// Set up image views to use in swapchain
 	void initImageViews();
+
+	// Configure pipeline	
+	void initGraphicsPipeline();
+
+	// create shader module from raw bytecode
+	VkShaderModule createShaderModule(const std::vector<char>& bytecode, VkDevice& device);
+
+	static std::vector<char> readFileBytes(const std::string& filename);
 
 	uint32_t calcSuitabilityScore(const VkPhysicalDevice& device, const VkSurfaceKHR& surface) const;
 	

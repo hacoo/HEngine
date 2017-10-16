@@ -3,6 +3,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <algorithm>
+#include <fstream>
 
 void VulkanApplication::run()
 {
@@ -16,6 +17,7 @@ void VulkanApplication::run()
 	pickPhysicalDevice();
 	initQueuesAndDevice();
 	initSwapchain();
+	initGraphicsPipeline();
 	
 	mainLoop();
 
@@ -350,6 +352,38 @@ void VulkanApplication::initImageViews()
 	}
 }
 
+void VulkanApplication::initGraphicsPipeline()
+{	
+	auto vertShaderCode = readFileBytes("Source/Shaders/vert.spv");
+	auto fragShaderCode = readFileBytes("Source/Shaders/frag.spv");
+
+	std::cout << "Loaded shader bytecode" << std::endl;
+
+	vertShaderModule = createShaderModule(vertShaderCode, device);
+	fragShaderModule = createShaderModule(fragShaderCode, device);
+
+	
+	
+	
+}
+
+VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
+	VkDevice& device)
+{
+	VkShaderModuleCreateInfo createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.codeSize = bytecode.size();
+	createInfo.pCode = reinterpret_cast<const uint32_t*>(bytecode.data());
+
+	VkShaderModule shaderModule;
+	if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create shader module");
+	}
+
+	return shaderModule;
+}
+
 uint32_t VulkanApplication::calcSuitabilityScore(const VkPhysicalDevice& device, const VkSurfaceKHR& surface) const
 {
 	VkPhysicalDeviceProperties deviceProperties;
@@ -661,8 +695,33 @@ void VulkanApplication::cleanup()
 	}
 	glfwTerminate();
 	
-	// Clean up Vulkan:
+	// Clean up shaders
+	vkDestroyShaderModule(device, vertShaderModule, nullptr);
+	vkDestroyShaderModule(device, fragShaderModule, nullptr);	
+
+	// Clean up device / instance:
 	DestroyDebugReportCallbackEXT(instance, callback, nullptr);
 	vkDestroyDevice(device, nullptr);
 	vkDestroyInstance(instance, nullptr);
+}
+
+std::vector<char> VulkanApplication::readFileBytes(const std::string& filename)
+{
+	// Open file starting at the end, in binary
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+	
+	if (!file.is_open())
+	{
+		throw std::runtime_error("Could not open file");
+	}
+
+	// At end, use this to determine file size
+	size_t fileSize = (size_t)file.tellg();
+	std::vector<char> buffer(fileSize);
+
+	file.seekg(0);
+	file.read(buffer.data(), fileSize);
+	file.close();
+
+	return buffer;
 }
