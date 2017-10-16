@@ -98,4 +98,14 @@ Notes on Vulkan
      - Therefore, you MUST set up pipelines in advance
      - However, it's faster - the driver can optimize far better
        
-       
+** Shader modules
+   - Vulkan uses SPIR-V bytecode shaders (why? because GPU vendors kept fucking up the spec)
+   - Khronos has a GLSL -> SPIR-V compiler :)
+   - Can do this at runtime, or beforehand
+
+** Vertex shaders
+   - Processes each incoming vertex
+   - input attributes: world position, color, normal, texture coord
+   - output: final position in clip coordinates, attributes needed by frag shader
+   - clip coord: homogeneous coord that can be turned into a normalized device coord [-1,-1] to [1,1]
+   - 
