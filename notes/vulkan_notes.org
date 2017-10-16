@@ -109,3 +109,11 @@ Notes on Vulkan
    - output: final position in clip coordinates, attributes needed by frag shader
    - clip coord: homogeneous coord that can be turned into a normalized device coord [-1,-1] to [1,1]
    - 
+** Pipeline conclusion
+   - Shader stages: programmable functionality
+   - Fixed function state: input, assembly, rasterizer, etc - non-programmable components
+   - Pipeline layout - uniform, push values
+   - Render passes - attachments refenced by pipeline stages
+
+
+   
