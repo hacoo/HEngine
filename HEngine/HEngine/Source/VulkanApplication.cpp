@@ -353,7 +353,7 @@ void VulkanApplication::initImageViews()
 }
 
 void VulkanApplication::initGraphicsPipeline()
-{	
+{
 	auto vertShaderCode = readFileBytes("Source/Shaders/vert.spv");
 	auto fragShaderCode = readFileBytes("Source/Shaders/frag.spv");
 
@@ -362,9 +362,153 @@ void VulkanApplication::initGraphicsPipeline()
 	vertShaderModule = createShaderModule(vertShaderCode, device);
 	fragShaderModule = createShaderModule(fragShaderCode, device);
 
+	// Modules are just bytecode wrappers -- ShaderStageInfo is pipeline context
+	VkPipelineShaderStageCreateInfo vertShaderStageInfo = { };
+	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertShaderStageInfo.module = vertShaderModule;
+	vertShaderStageInfo.pName = "main"; // function to invoke -- for multiple in one file
+	// Important note -- shaderStageInfo contains pSpecializationInfo, which is for specifying constants
+	// It's more efficient if these can be specified when setting up the pipeline	
+
+	VkPipelineShaderStageCreateInfo fragShaderStageInfo = { };
+	fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragShaderStageInfo.module = fragShaderModule;
+	fragShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+	// Describes format of vertex data, attributes passed to vert shader:
+	VkPipelineVertexInputStateCreateInfo vertexInputInfo = { };
+	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertexInputInfo.vertexBindingDescriptionCount = 0;
+	vertexInputInfo.pVertexBindingDescriptions = nullptr;
+	vertexInputInfo.vertexAttributeDescriptionCount = 0;
+	vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+	// What kind of geometry to draw from vertices, also, should primitive resart be enabled
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo = { };
+	inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	inputAssemblyInfo.primitiveRestartEnable = false;
+
+	// viewport -- region of framebuffer where output is rendered
+	VkViewport viewport = { };
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = (float)swapchainExtent.width;
+	viewport.height = (float)swapchainExtent.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 0.0f;
+
+	// Scissor - cut out part of the viewport
+	VkRect2D scissor = { };
+	scissor.offset = { 0,0 };
+	scissor.extent = swapchainExtent;
+
+	// Combine viewport, scissor
+	VkPipelineViewportStateCreateInfo viewportStateInfo = { };
+	viewportStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewportStateInfo.viewportCount = 1;
+	viewportStateInfo.pViewports = &viewport;
+	viewportStateInfo.scissorCount = 1;
+	viewportStateInfo.pScissors = &scissor;
+
+	// Set up rasterizer
+	VkPipelineRasterizationStateCreateInfo rasterizerInfo = { };
+	rasterizerInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+
+	// Depth clamp -- if true, fragments outside near / far plane are clamped instead of culling
+	rasterizerInfo.depthClampEnable = VK_FALSE;
+
+	// if true, the rasterizer is turned off completely!
+	rasterizerInfo.rasterizerDiscardEnable = VK_FALSE;
+	rasterizerInfo.polygonMode = VK_POLYGON_MODE_FILL;
+	// rasterizerInfo.polygonMode = VK_POLYGON_MODE_LINE;
+	// rasterizerInfo.polygonMode = VK_POLYGON_MODE_POINTS;
+	rasterizerInfo.lineWidth = 1.0f;
+
+	// Cull back-facing triangles
+	rasterizerInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizerInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+
+	// Depth bias -- usually used to resolve z-layering issues on coplanar geometry, e.g., shadows
+	// I.e., you'd give everything in the shadow buffer a small bias
+	rasterizerInfo.depthBiasEnable = VK_FALSE;
+	rasterizerInfo.depthBiasConstantFactor = 0.0f;
+	rasterizerInfo.depthBiasClamp = 0.0f;
+	rasterizerInfo.depthBiasSlopeFactor = 0.0f;
+
+	// Set up multisampling -- turned off for now
+	VkPipelineMultisampleStateCreateInfo multisampleInfo = { };
+	multisampleInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisampleInfo.sampleShadingEnable = VK_FALSE;
+	multisampleInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	multisampleInfo.minSampleShading = 1.0f;
+	multisampleInfo.pSampleMask = nullptr;
+	multisampleInfo.alphaToCoverageEnable = VK_FALSE;
+	multisampleInfo.alphaToOneEnable = VK_FALSE;
+
+	// Depth and stencil buffers -- not used now, but would be set up here
+
+	// Set up color blending - i.e, what happens if there's already a color in the framebuffer
+	// ColorBlendAttachmentState is per framebuffer.
+	// Here, we set up alpha blending:
+	VkPipelineColorBlendAttachmentState colorBlendAttachmentInfo = { };
+	colorBlendAttachmentInfo.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+		VK_COLOR_COMPONENT_G_BIT |
+		VK_COLOR_COMPONENT_B_BIT |
+		VK_COLOR_COMPONENT_A_BIT;
+	colorBlendAttachmentInfo.blendEnable = VK_TRUE;
+	colorBlendAttachmentInfo.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	colorBlendAttachmentInfo.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	colorBlendAttachmentInfo.colorBlendOp = VK_BLEND_OP_ADD;
+	colorBlendAttachmentInfo.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	colorBlendAttachmentInfo.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	colorBlendAttachmentInfo.alphaBlendOp = VK_BLEND_OP_ADD;
+
+	// Reference blend attachment structure for all framebuffers, set up global stuff, constants
+	VkPipelineColorBlendStateCreateInfo colorBlendingInfo = { };
+	colorBlendingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	colorBlendingInfo.logicOpEnable = VK_FALSE;
+	colorBlendingInfo.logicOp = VK_LOGIC_OP_COPY;
+	colorBlendingInfo.attachmentCount = 1;
+	colorBlendingInfo.pAttachments = &colorBlendAttachmentInfo;
+	colorBlendingInfo.blendConstants[0] = 0.0f;
+  	colorBlendingInfo.blendConstants[1] = 0.0f;
+	colorBlendingInfo.blendConstants[2] = 0.0f;
+	colorBlendingInfo.blendConstants[3] = 0.0f;
+
+	// A few pipeline things CAN be changed dynamically - e.g., viewport size, line width...
+	VkDynamicState dynamicStates[] =
+	{
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_LINE_WIDTH
+	};
 	
+	VkPipelineDynamicStateCreateInfo dynamicStateInfo = { };
+	dynamicStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamicStateInfo.dynamicStateCount = 2;
+	dynamicStateInfo.pDynamicStates = dynamicStates;
+
+	// Set up pipeline layout. Can also set up 'push constants', dynamic constants sent to shaders.
+	// These aren't used yet.	
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo = { };
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = 0;
+	pipelineLayoutInfo.pSetLayouts = nullptr;
+	pipelineLayoutInfo.pushConstantRangeCount = 0;
+	pipelineLayoutInfo.pPushConstantRanges = 0;
+
+	if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create pipeline layout");
+	}
+
 	
-	
+
+
 }
 
 VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
@@ -680,6 +824,8 @@ void VulkanApplication::mainLoop()
 
 void VulkanApplication::cleanup()
 {
+	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
 	// Clean up swapchain first, it may require glfw to still be alive (not sure)
 	for (auto& view : swapchainViews)
 	{

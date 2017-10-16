@@ -190,6 +190,11 @@ private: // data
 	VkShaderModule vertShaderModule;
 	VkShaderModule fragShaderModule;
 
+	// Pipeline
+	VkPipelineLayout pipelineLayout;
+
+private: // methods
+
 	// Setup functions
 
 	// Create glfw window
