@@ -195,6 +195,9 @@ private: // data
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
+	// Framebuffers
+	std::vector <VkFramebuffer> swapchainFramebuffers;
+
 private: // methods
 
 	// Setup functions
@@ -228,6 +231,9 @@ private: // methods
 
 	// Configure pipeline	
 	void initGraphicsPipeline();
+
+	// Set up framebuffers
+	void initFramebuffers();
 
 	// create shader module from raw bytecode
 	VkShaderModule createShaderModule(const std::vector<char>& bytecode, VkDevice& device);

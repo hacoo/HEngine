@@ -20,6 +20,7 @@ void VulkanApplication::run()
 	initSwapchain();
 	createRenderPass();
 	initGraphicsPipeline();
+	initFramebuffers();
 	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
 
 	mainLoop();
@@ -582,6 +583,30 @@ void VulkanApplication::initGraphicsPipeline()
 	}
 }
 
+void VulkanApplication::initFramebuffers()
+{
+	swapchainFramebuffers.resize(swapchainViews.size());
+
+	for (size_t i = 0; i < swapchainViews.size(); ++i)
+	{
+		VkImageView attachments[] = { swapchainViews[i] };
+
+		VkFramebufferCreateInfo framebufferInfo = { };
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = renderPass;
+		framebufferInfo.attachmentCount = 1;
+		framebufferInfo.pAttachments = attachments;
+		framebufferInfo.width = swapchainExtent.width;
+		framebufferInfo.height = swapchainExtent.height;
+		framebufferInfo.layers = 1;
+
+		if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapchainFramebuffers[i]) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Failed to create framebuffer");
+		}
+	}	
+}
+
 VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
 	VkDevice& device)
 {
@@ -895,6 +920,13 @@ void VulkanApplication::mainLoop()
 
 void VulkanApplication::cleanup()
 {
+	std::cout << "Beginning Vulkan teardown... " << std::endl;
+
+	for (auto& fb : swapchainFramebuffers)
+	{
+		vkDestroyFramebuffer(device, fb, nullptr);
+	}
+
 	vkDestroyPipeline(device, graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 	vkDestroyRenderPass(device, renderPass, nullptr);
@@ -922,6 +954,8 @@ void VulkanApplication::cleanup()
 	DestroyDebugReportCallbackEXT(instance, callback, nullptr);
 	vkDestroyDevice(device, nullptr);
 	vkDestroyInstance(instance, nullptr);
+
+	std::cout << "Vulkan cleaned up OK" << std::endl;	
 }
 
 std::vector<char> VulkanApplication::readFileBytes(const std::string& filename)
