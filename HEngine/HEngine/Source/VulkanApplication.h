@@ -198,6 +198,11 @@ private: // data
 	// Framebuffers
 	std::vector <VkFramebuffer> swapchainFramebuffers;
 
+	// Command pool / buffers
+	VkCommandPool commandPool;
+	std::vector<VkCommandBuffer> commandBuffers;
+
+
 private: // methods
 
 	// Setup functions
@@ -234,6 +239,12 @@ private: // methods
 
 	// Set up framebuffers
 	void initFramebuffers();
+
+	// Set up command pool
+	void initCommandPool();
+
+	// Set up command buffers
+	void initCommandBuffers();
 
 	// create shader module from raw bytecode
 	VkShaderModule createShaderModule(const std::vector<char>& bytecode, VkDevice& device);

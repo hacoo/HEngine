@@ -18,9 +18,12 @@ void VulkanApplication::run()
 	pickPhysicalDevice();
 	initQueuesAndDevice();
 	initSwapchain();
+	initImageViews();
 	createRenderPass();
 	initGraphicsPipeline();
 	initFramebuffers();
+	initCommandPool();
+	initCommandBuffers();
 	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
 
 	mainLoop();
@@ -348,6 +351,12 @@ void VulkanApplication::initImageViews()
 		createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 		createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+		
+		createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		createInfo.subresourceRange.baseMipLevel = 0;
+		createInfo.subresourceRange.levelCount = 1;
+		createInfo.subresourceRange.baseArrayLayer = 0;
+		createInfo.subresourceRange.layerCount = 1;
 
 		if (vkCreateImageView(device, &createInfo, nullptr, &swapchainViews[i]) != VK_SUCCESS) 
 		{
@@ -605,6 +614,80 @@ void VulkanApplication::initFramebuffers()
 			throw std::runtime_error("Failed to create framebuffer");
 		}
 	}	
+}
+
+void VulkanApplication::initCommandPool()
+{
+	VkCommandPoolCreateInfo poolInfo = { };
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.queueFamilyIndex = queueIndices.graphics;
+	poolInfo.flags = 0;
+	
+	// Possible flags:
+	// Flag that this pool is rerecorded with new commands often
+	// poolInfo.flags |= VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+	// Allow command buffers to be rerecorded individually
+	// poolInfo.flags |= VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	
+	if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Could not create command pool");
+	}
+	
+}
+
+void VulkanApplication::initCommandBuffers()
+{
+	commandBuffers.resize(swapchainFramebuffers.size());
+
+	VkCommandBufferAllocateInfo allocInfo = { };
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = commandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = (uint32_t) commandBuffers.size();
+
+	if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Could not allocate command buffers");
+	}
+
+	for (size_t i = 0; i < commandBuffers.size(); ++i)
+	{
+		VkCommandBufferBeginInfo beginInfo = { };
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		// Indicates that CB may be used while pending execution - i.e., submitting draw commands
+		// while previous frame is still drawing		
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
+
+		// Reset the buffer
+		vkBeginCommandBuffer(commandBuffers[i], &beginInfo);
+
+		VkRenderPassBeginInfo renderPassInfo = { };
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		renderPassInfo.renderPass = renderPass;
+		renderPassInfo.framebuffer = swapchainFramebuffers[i];
+
+		renderPassInfo.renderArea.offset = { 0, 0 };
+		renderPassInfo.renderArea.extent = swapchainExtent;
+
+		VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+		renderPassInfo.clearValueCount = 1;
+		renderPassInfo.pClearValues = &clearColor;
+
+		vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+		
+		vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+		vkCmdEndRenderPass(commandBuffers[i]);
+
+		if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS)
+		{
+			throw std::runtime_error("Could not record command buffer");
+		}
+	}
 }
 
 VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
@@ -921,6 +1004,8 @@ void VulkanApplication::mainLoop()
 void VulkanApplication::cleanup()
 {
 	std::cout << "Beginning Vulkan teardown... " << std::endl;
+
+	vkDestroyCommandPool(device, commandPool, nullptr);
 
 	for (auto& fb : swapchainFramebuffers)
 	{
