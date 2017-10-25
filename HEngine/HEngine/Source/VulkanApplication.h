@@ -232,6 +232,12 @@ private: // methods
 	// set up the swapchain
 	void initSwapchain();
 
+	// Clean up previously-created swapchain
+	void cleanupSwapchain();
+
+	// Create or re-create the swapchain. Will call everything that depends on the swapchain.
+	void recreateSwapchain();
+
 	// Set up image views to use in swapchain
 	void initImageViews();
 
@@ -281,7 +287,9 @@ private: // methods
 	// Choose the swap chain presentation mode. Currently using mailbox so we can use tripple buffering.
 	static VkPresentModeKHR chooseSwapChainPresentMode(const std::vector<VkPresentModeKHR> availablePresentModes);
 
-	static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height);
+	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+
+	// Callbacks:
 
 	// Callback for validation layers
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -293,6 +301,8 @@ private: // methods
 		const char* layerPrefix,
 		const char* msg,
 		void* userData);
+
+	static void onWindowResized(GLFWwindow* window, int width, int height);
 
 	void mainLoop();
 

@@ -41,10 +41,14 @@ void VulkanApplication::initWindow()
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
 	// Turn off resizing for now
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	// glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	// First nullptr would specify which monitor. Second is OpenGL-specific.
 	window = glfwCreateWindow(width, height, "Hello, Triangle!", nullptr, nullptr);
+
+	// Register size-change callback
+	glfwSetWindowUserPointer(window, this);
+	glfwSetWindowSizeCallback(window, VulkanApplication::onWindowResized);
 }
 
 void VulkanApplication::initVulkanInstance()
@@ -263,7 +267,7 @@ void VulkanApplication::initSwapchain()
 	swapChainInfo.initialize(physicalDevice, surface);
 	VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainInfo.formats);
 	VkPresentModeKHR presentMode = chooseSwapChainPresentMode(swapChainInfo.presentModes);
-	VkExtent2D extent = chooseSwapExtent(swapChainInfo.capabilities, width, height);
+	VkExtent2D extent = chooseSwapExtent(swapChainInfo.capabilities);
 
 	uint32_t imageCount = swapChainInfo.capabilities.minImageCount + 1;
 	if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR)
@@ -423,8 +427,6 @@ void VulkanApplication::initGraphicsPipeline()
 {
 	auto vertShaderCode = readFileBytes("Source/Shaders/vert.spv");
 	auto fragShaderCode = readFileBytes("Source/Shaders/frag.spv");
-
-	std::cout << "Loaded shader bytecode" << std::endl;
 
 	vertShaderModule = createShaderModule(vertShaderCode, device);
 	fragShaderModule = createShaderModule(fragShaderCode, device);
@@ -718,6 +720,22 @@ void VulkanApplication::initSynchro()
 	}
 }
 
+
+void VulkanApplication::recreateSwapchain()
+{
+	vkDeviceWaitIdle(device);
+
+	cleanupSwapchain();
+
+	// Call everything that depends on swapchain or image size
+	initSwapchain();
+	initImageViews();
+	createRenderPass();
+	initGraphicsPipeline();
+	initFramebuffers();
+	initCommandBuffers();
+}
+
 VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
 	VkDevice& device)
 {
@@ -915,7 +933,7 @@ VkPresentModeKHR VulkanApplication::chooseSwapChainPresentMode(const std::vector
 	return VK_PRESENT_MODE_IMMEDIATE_KHR;
 }
 
-VkExtent2D VulkanApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height)
+VkExtent2D VulkanApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 {
 	// swap extent is resolution of swap chain images -- basically, resolution of window
 	
@@ -924,8 +942,10 @@ VkExtent2D VulkanApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
 		return capabilities.currentExtent;
 	}
 
-	// if currentExtent.width is maxed, we need to extents by hand:
-	VkExtent2D extent = { width, height };
+	// if currentExtent.width is maxed, we need to set extents by hand:
+	int width, height;
+	glfwGetWindowSize(window, &width, &height);
+	VkExtent2D extent = { (uint32_t) width, (uint32_t) height };
 
 	extent.width = std::max(capabilities.minImageExtent.width,
 		std::min(capabilities.maxImageExtent.width, extent.width));
@@ -1021,6 +1041,17 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanApplication::debugCallback(
 	return VK_FALSE;
 }
 
+void VulkanApplication::onWindowResized(GLFWwindow* window, int width, int height)
+{
+	if (width == 0 || height == 0)
+	{
+		return;
+	}
+
+	VulkanApplication* app = reinterpret_cast<VulkanApplication*>(glfwGetWindowUserPointer(window));
+	app->recreateSwapchain();
+}
+
 void VulkanApplication::mainLoop()
 {
 	while (!glfwWindowShouldClose(window))
@@ -1105,16 +1136,18 @@ void VulkanApplication::drawFrame()
 
 }
 
-void VulkanApplication::cleanup()
+void VulkanApplication::cleanupSwapchain()
 {
-	std::cout << "Beginning Vulkan teardown... " << std::endl;
-
-	vkDestroyCommandPool(device, commandPool, nullptr);
-
 	for (auto& fb : swapchainFramebuffers)
 	{
 		vkDestroyFramebuffer(device, fb, nullptr);
 	}
+
+	vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+
+	// Clean up shaders
+	vkDestroyShaderModule(device, vertShaderModule, nullptr);
+	vkDestroyShaderModule(device, fragShaderModule, nullptr);
 
 	vkDestroyPipeline(device, graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -1127,28 +1160,34 @@ void VulkanApplication::cleanup()
 	}
 
 	vkDestroySwapchainKHR(device, swapchain, nullptr);
+}
+
+void VulkanApplication::cleanup()
+{
+	std::cout << "Beginning Vulkan teardown... " << std::endl;
+
+	cleanupSwapchain();
 
 	// Clean up synchro stuff
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);
 	vkDestroySemaphore(device, renderFinishedSem, nullptr);
+
+	vkDestroyCommandPool(device, commandPool, nullptr);
 	
+	// Clean up device / instance:
+	vkDestroyDevice(device, nullptr);
+	vkDestroySurfaceKHR(instance, surface, nullptr);
+	DestroyDebugReportCallbackEXT(instance, callback, nullptr);
+	vkDestroyInstance(instance, nullptr);
+
+	std::cout << "Vulkan cleaned up OK" << std::endl;	
+
 	// Clean up GLFW:
 	if (window != nullptr)
 	{
 		glfwDestroyWindow(window);
 	}
 	glfwTerminate();
-	
-	// Clean up shaders
-	vkDestroyShaderModule(device, vertShaderModule, nullptr);
-	vkDestroyShaderModule(device, fragShaderModule, nullptr);	
-
-	// Clean up device / instance:
-	DestroyDebugReportCallbackEXT(instance, callback, nullptr);
-	vkDestroyDevice(device, nullptr);
-	vkDestroyInstance(instance, nullptr);
-
-	std::cout << "Vulkan cleaned up OK" << std::endl;	
 }
 
 std::vector<char> VulkanApplication::readFileBytes(const std::string& filename)
