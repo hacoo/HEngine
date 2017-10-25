@@ -202,6 +202,10 @@ private: // data
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 
+	// Rendering synchronoization 
+	VkSemaphore imageAvailableSem;
+	VkSemaphore renderFinishedSem;
+
 
 private: // methods
 
@@ -246,6 +250,9 @@ private: // methods
 	// Set up command buffers
 	void initCommandBuffers();
 
+	// Set up semaphores / other synchro stuff
+	void initSynchro();
+
 	// create shader module from raw bytecode
 	VkShaderModule createShaderModule(const std::vector<char>& bytecode, VkDevice& device);
 
@@ -288,6 +295,8 @@ private: // methods
 		void* userData);
 
 	void mainLoop();
+
+	void drawFrame();
 
 	void cleanup();
 };

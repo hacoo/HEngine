@@ -24,6 +24,7 @@ void VulkanApplication::run()
 	initFramebuffers();
 	initCommandPool();
 	initCommandBuffers();
+	initSynchro();
 	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
 
 	mainLoop();
@@ -690,6 +691,19 @@ void VulkanApplication::initCommandBuffers()
 	}
 }
 
+void VulkanApplication::initSynchro()
+{
+	// Create semaphores:
+	VkSemaphoreCreateInfo semInfo = { };
+	semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	if (vkCreateSemaphore(device, &semInfo, nullptr, &imageAvailableSem) != VK_SUCCESS ||
+		vkCreateSemaphore(device, &semInfo, nullptr, &renderFinishedSem) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create semaphores");
+	}
+}
+
 VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
 	VkDevice& device)
 {
@@ -998,6 +1012,53 @@ void VulkanApplication::mainLoop()
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
+
+		drawFrame();
+	}
+}
+
+void VulkanApplication::drawFrame()
+{
+	// Does the following:
+	// 1. Get image from swap chain
+	// 2. Execute command buffer with that image attached
+	// 3. Return image to swap chain
+	
+	uint32_t imageIndex = 0xDEADBEEF;
+	uint64_t timeout = std::numeric_limits<uint64_t>::max();
+
+	// Get next image from swapchain, signal imageAvailableSem when done. Records into imageIndex
+	vkAcquireNextImageKHR(device, swapchain, timeout, imageAvailableSem, VK_NULL_HANDLE, &imageIndex);
+
+	VkSubmitInfo submitInfo = { };
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+	// Semaphores to wait on - command buffer will not execute until these signal
+	VkSemaphore waitSems[] = { imageAvailableSem };
+
+	// Stages to wait at. We want to wait before writing colors to the image (but other stuff can get started -- 
+	// e.g., vertex shaders, which don't need an image to write on yet. Note that each mask corresponds 
+	// to a semaphore at the same index.
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = waitSems;
+	submitInfo.pWaitDstStageMask = waitStages;
+	
+	// Now register the command buffer we want to execute. This should correspond
+	// to a swapchain index	
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+
+	// Semaphore to signal once the command buffer is done executing
+	VkSemaphore signalSemaphores[] = { renderFinishedSem };
+
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;
+
+	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to submit to graphics queue");
 	}
 }
 
@@ -1024,6 +1085,10 @@ void VulkanApplication::cleanup()
 
 	vkDestroySwapchainKHR(device, swapchain, nullptr);
 
+	// Clean up synchro stuff
+	vkDestroySemaphore(device, imageAvailableSem, nullptr);
+	vkDestroySemaphore(device, renderFinishedSem, nullptr);
+	
 	// Clean up GLFW:
 	if (window != nullptr)
 	{
