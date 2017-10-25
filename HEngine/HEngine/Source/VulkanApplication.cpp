@@ -23,7 +23,7 @@ void VulkanApplication::run()
 	createRenderPass();
 	initGraphicsPipeline();
 	initFramebuffers();
-	initCommandPool();
+	initCommandPools();
 	initVertexBuffers();
 	initCommandBuffers();
 	initSynchro();
@@ -31,7 +31,9 @@ void VulkanApplication::run()
 
 	fillVertexBuffer();
 
-	// turn window back on:
+	std::cout << "Graphics queue index: " << queueIndices.graphics << std::endl;
+	std::cout << "Present queue index: " << queueIndices.present << std::endl;
+	std::cout << "Transfer queue index: " << queueIndices.transfer << std::endl;
 
 	mainLoop();
 
@@ -219,7 +221,11 @@ void VulkanApplication::initQueuesAndDevice()
 	
 	// Create all queues:
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-	std::set<int> uniqueQueueFamilies = { queueIndices.graphics, queueIndices.present };
+	std::set<int> uniqueQueueFamilies = { 
+queueIndices.graphics,
+queueIndices.present,
+queueIndices.transfer 
+	};
 
 	float queuePriority = 1.0f;
 	for (int queueFamily : uniqueQueueFamilies) {
@@ -267,6 +273,7 @@ void VulkanApplication::initQueuesAndDevice()
 	// Third argument is offset if storing in array
 	vkGetDeviceQueue(device, queueIndices.graphics, 0, &graphicsQueue);	 
 	vkGetDeviceQueue(device, queueIndices.present, 0, &presentQueue);
+	vkGetDeviceQueue(device, queueIndices.transfer, 0, &transferQueue);
 }
 
 void VulkanApplication::initSwapchain()
@@ -645,12 +652,13 @@ void VulkanApplication::initFramebuffers()
 	}	
 }
 
-void VulkanApplication::initCommandPool()
+void VulkanApplication::initCommandPools()
 {
-	VkCommandPoolCreateInfo poolInfo = { };
-	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.queueFamilyIndex = queueIndices.graphics;
-	poolInfo.flags = 0;
+	// Create graphics command pool
+	VkCommandPoolCreateInfo graphicsPoolInfo = { };
+	graphicsPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	graphicsPoolInfo.queueFamilyIndex = queueIndices.graphics;
+	graphicsPoolInfo.flags = 0;
 	
 	// Possible flags:
 	// Flag that this pool is rerecorded with new commands often
@@ -658,11 +666,20 @@ void VulkanApplication::initCommandPool()
 	// Allow command buffers to be rerecorded individually
 	// poolInfo.flags |= VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	
-	if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
+	if (vkCreateCommandPool(device, &graphicsPoolInfo, nullptr, &graphicsCommandPool) != VK_SUCCESS)
 	{
-		throw std::runtime_error("Could not create command pool");
+		throw std::runtime_error("Could not create graphics command pool");
 	}
-	
+
+	VkCommandPoolCreateInfo transferPoolInfo = { };
+	transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	transferPoolInfo.queueFamilyIndex = queueIndices.transfer;
+	transferPoolInfo.flags = 0;
+
+	if (vkCreateCommandPool(device, &transferPoolInfo, nullptr, &transferCommandPool) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Could not create transfer command pool");
+	}
 }
 
 void VulkanApplication::initVertexBuffers()
@@ -671,7 +688,18 @@ void VulkanApplication::initVertexBuffers()
 	vbInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	vbInfo.size = sizeof(vertices[0]) * vertices.size();
 	vbInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	vbInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	// vbInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	// Allow both graphics and transfer queues to access this buffer.
+	// If we used the graphics queue for both ops, you'd use exclusive mode.
+	uint32_t queues[] = {
+static_cast<uint32_t>(queueIndices.graphics),
+static_cast<uint32_t>(queueIndices.transfer)
+	};
+
+	vbInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+	vbInfo.queueFamilyIndexCount = 2;
+	vbInfo.pQueueFamilyIndices = queues;
 
 	if (vkCreateBuffer(device, &vbInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
 	{
@@ -724,7 +752,7 @@ void VulkanApplication::initCommandBuffers()
 
 	VkCommandBufferAllocateInfo allocInfo = { };
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = commandPool;
+	allocInfo.commandPool = graphicsCommandPool;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	allocInfo.commandBufferCount = (uint32_t) commandBuffers.size();
 
@@ -1260,7 +1288,7 @@ void VulkanApplication::cleanupSwapchain()
 		vkDestroyFramebuffer(device, fb, nullptr);
 	}
 
-	vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+	vkFreeCommandBuffers(device, graphicsCommandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
 	// Clean up shaders
 	vkDestroyShaderModule(device, vertShaderModule, nullptr);
@@ -1292,7 +1320,8 @@ void VulkanApplication::cleanup()
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);
 	vkDestroySemaphore(device, renderFinishedSem, nullptr);
 
-	vkDestroyCommandPool(device, commandPool, nullptr);
+	vkDestroyCommandPool(device, graphicsCommandPool, nullptr);
+	vkDestroyCommandPool(device, transferCommandPool, nullptr);
 	
 	// Clean up device / instance:
 	vkDestroyDevice(device, nullptr);

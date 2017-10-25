@@ -43,8 +43,7 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-class VulkanApplication
-{
+class VulkanApplication{
 public: // methods
 
 	VulkanApplication()
@@ -76,6 +75,7 @@ public: // classes
 			:
 			graphics(-1),
 			present(-1),
+			transfer(-1),
 			queueFamilyCount(0)
 		{ }
 		
@@ -87,6 +87,10 @@ public: // classes
 				return false;
 			}
 			if (present < 0)
+			{
+				return false;
+			}
+			if (transfer < 0)
 			{
 				return false;
 			}
@@ -104,21 +108,57 @@ public: // classes
 
 			for (int i = 0; i < queueFamilies.size(); ++i)
 			{
-				// check graphics
-				if (queueFamilies[i].queueCount > 0 &&
-					queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+				if (queueFamilies[i].queueCount > 0)
 				{
-					graphics = i;
-				}
+					// check graphics
+					VkQueueFlags graphicsSupport = queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT;
+					if (graphicsSupport)
+					{
+						graphics = i;
+						break;
+					}
+				}	
+			}
 
-				// check present
-				VkBool32 presentSupport;
-				vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-
-				if (queueFamilies[i].queueCount > 0 && presentSupport)
+			for (int i = 0; i < queueFamilies.size(); ++i)
+			{
+				if (queueFamilies[i].queueCount > 0)
 				{
-					present = i;
+					// check present
+					VkBool32 presentSupport;
+					vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+					
+					if (presentSupport)
+					{
+						present = i;
+					}
 				}
+			}
+
+			// Try to find an unused queue for transfer ops
+			for (int i = 0; i < queueFamilies.size(); ++i)
+			{
+				if (queueFamilies[i].queueCount > 0)
+				{
+					// check transfer
+					// NOTE: any queue that supports graphics or compute also support transfer.
+					// However, they are NOT required to set the transfer bit also!!
+					VkQueueFlags computeSupport = queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT;
+					VkQueueFlags transferSupport = queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT;
+					VkQueueFlags graphicsSupport = queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT;
+					if ((graphicsSupport || computeSupport || transferSupport) &&
+						graphics != i)
+					{
+						transfer = i;
+						break;
+					}
+				}
+			}
+
+			// If we couldn't find a separate queue for transfer, use the graphics queue
+			if (transfer < 0)
+			{
+				transfer = graphics;
 			}
 
 			return isValid();
@@ -128,6 +168,7 @@ public: // classes
 		// Indices of queues used in this application
 		int graphics;
 		int present;
+		int transfer;
 		uint32_t queueFamilyCount;
 	};
 
@@ -186,8 +227,13 @@ private: // data
 	VkExtent2D swapchainExtent;
 
 	// queues:
+
+	// for graphics operations
 	VkQueue graphicsQueue;
+	// for presenting stuff on the screen
 	VkQueue presentQueue;
+	// for schlepping memory around
+	VkQueue transferQueue;
 
 	// Shader modules
 	VkShaderModule vertShaderModule;
@@ -214,7 +260,8 @@ private: // data
 	std::vector <VkFramebuffer> swapchainFramebuffers;
 
 	// Command pool / buffers
-	VkCommandPool commandPool;
+	VkCommandPool graphicsCommandPool;
+	VkCommandPool transferCommandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 
 	// Rendering synchronoization 
@@ -266,7 +313,7 @@ private: // methods
 	void initFramebuffers();
 
 	// Set up command pool
-	void initCommandPool();
+	void initCommandPools();
 
 	// Set up vertex buffers
 	void initVertexBuffers();
