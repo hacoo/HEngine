@@ -16,6 +16,9 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW\glfw3native.h>
 
+#include "render_types.h"
+#include "vulkan_util.h"
+
 // Requested debug flags
 const VkDebugReportFlagsEXT debugFlags = // VK_DEBUG_REPORT_DEBUG_BIT_EXT |
 VK_DEBUG_REPORT_WARNING_BIT_EXT |
