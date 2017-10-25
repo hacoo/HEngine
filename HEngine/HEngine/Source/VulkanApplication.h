@@ -247,15 +247,30 @@ private: // data
 	// Vertex buffer
 	const std::vector<Vertex2D> vertices = 
 	{
-{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-{{0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
-{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
 	};
 
+	// Vertex index buffer
+	const std::vector<size_t> indices = 
+	{
+		0, 1, 2, 2, 3, 0
+	};
+
+	// Vertex buffer hold actual vertices to draw
 	size_t vertexBufferSize;
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
 
+	// Staging buffer for vertex data; can be mapped by CPU.
+	// Vertex data is then transfered to the vertex buffer.
+	// This is because CPU-mappable memory is often not the fastest for rendering.
+	size_t vertexStagingBufferSize;
+	VkBuffer vertexStagingBuffer;
+	VkDeviceMemory vertexStagingMemory;
+	
 	// Framebuffers
 	std::vector <VkFramebuffer> swapchainFramebuffers;
 
@@ -359,6 +374,9 @@ private: // methods
 	static VkPresentModeKHR chooseSwapChainPresentMode(const std::vector<VkPresentModeKHR> availablePresentModes);
 
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+ 
+	// Copy GPU memory around
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	// Callbacks:
 

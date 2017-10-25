@@ -674,7 +674,8 @@ void VulkanApplication::initCommandPools()
 	VkCommandPoolCreateInfo transferPoolInfo = { };
 	transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	transferPoolInfo.queueFamilyIndex = queueIndices.transfer;
-	transferPoolInfo.flags = 0;
+	// Flag as transient, since the command buffer is recorded each time we transfer
+	transferPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
 	if (vkCreateCommandPool(device, &transferPoolInfo, nullptr, &transferCommandPool) != VK_SUCCESS)
 	{
@@ -684,11 +685,15 @@ void VulkanApplication::initCommandPools()
 
 void VulkanApplication::initVertexBuffers()
 {
-	VkBufferCreateInfo vbInfo = { };
-	vbInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	vbInfo.size = sizeof(vertices[0]) * vertices.size();
-	vbInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	// vbInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	// Create vertex buffer
+	VkBufferUsageFlags bufUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+	VkBufferCreateInfo bufInfo = { };
+	bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufInfo.size = sizeof(vertices[0]) * vertices.size();
+	bufInfo.usage = bufUsage;
+	// bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	// Allow both graphics and transfer queues to access this buffer.
 	// If we used the graphics queue for both ops, you'd use exclusive mode.
@@ -697,23 +702,23 @@ static_cast<uint32_t>(queueIndices.graphics),
 static_cast<uint32_t>(queueIndices.transfer)
 	};
 
-	vbInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-	vbInfo.queueFamilyIndexCount = 2;
-	vbInfo.pQueueFamilyIndices = queues;
+	bufInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+	bufInfo.queueFamilyIndexCount = 2;
+	bufInfo.pQueueFamilyIndices = queues;
 
-	if (vkCreateBuffer(device, &vbInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
+	if (vkCreateBuffer(device, &bufInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
 	{
 		throw std::runtime_error("failed to created vertex buffer");
 	}
 
-	vertexBufferSize = vbInfo.size;
+	vertexBufferSize = bufInfo.size;
 
 	// Buffer handle is created, but no underlying memory. Let's make it:
 	VkMemoryRequirements memReqs;
 	vkGetBufferMemoryRequirements(device, vertexBuffer, &memReqs);
 	
-	// memory must be visible / writable by CPU so we can but vertices there
-	VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	// Vertex buffer should be fast, local memory
+	VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
 	VkMemoryAllocateInfo allocInfo = { };
 	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -726,15 +731,47 @@ static_cast<uint32_t>(queueIndices.transfer)
 	}
 
 	vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+	// Create the staging buffer. CPU will transfer here.
+	// Re-use memreqs and allocInfo
+	uint32_t transferQueueIndex = queueIndices.transfer;
+	bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	bufInfo.queueFamilyIndexCount = 1;
+	bufInfo.pQueueFamilyIndices = &transferQueueIndex;
+
+	bufUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	bufInfo.usage = bufUsage;
+	
+	if (vkCreateBuffer(device, &bufInfo, nullptr, &vertexStagingBuffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to created vertex staging buffer");
+	}
+
+	vertexStagingBufferSize = bufInfo.size;
+
+	vkGetBufferMemoryRequirements(device, vertexStagingBuffer, &memReqs);
+
+	// Staging 
+	memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	allocInfo.allocationSize = memReqs.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexStagingMemory) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to allocated vertex staging memory");
+	}
+
+	vkBindBufferMemory(device, vertexStagingBuffer, vertexStagingMemory, 0);
 }
 
 void VulkanApplication::fillVertexBuffer()
 {
 	void* data;
 
-	vkMapMemory(device, vertexBufferMemory, 0, static_cast<VkDeviceSize>(vertexBufferSize), 0, &data);
+	// Transfer to staging memory first:
+	vkMapMemory(device, vertexStagingMemory, 0, static_cast<VkDeviceSize>(vertexStagingBufferSize), 0, &data);
 
-	memcpy(data, vertices.data(), vertexBufferSize);
+	memcpy(data, vertices.data(), vertexStagingBufferSize);
 
 	// Note: For some type of memory, you would need to call vkFlushMappedMemoryRanges after writing,
 	// to ensure the write makes it to the device. This isn't necessery because we specified the 
@@ -743,7 +780,10 @@ void VulkanApplication::fillVertexBuffer()
 	// Similarly, if reading memory, you would need to call vkInvalidateMappedMemoryRanges before
 	// reading, if the memory is not coherent.	
 
-	vkUnmapMemory(device, vertexBufferMemory);
+	vkUnmapMemory(device, vertexStagingMemory);
+
+	// Copy into device memory
+	copyBuffer(vertexStagingBuffer, vertexBuffer, vertexStagingBufferSize);
 }
 
 void VulkanApplication::initCommandBuffers()
@@ -1073,6 +1113,47 @@ VkExtent2D VulkanApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
 	return extent;
 }
 
+void VulkanApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+{
+	// Create a temporary command buffer for the copy op:
+	VkCommandBufferAllocateInfo allocInfo = { };
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = transferCommandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+	VkCommandBufferBeginInfo beginInfo = { };
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+	VkBufferCopy copyRegion = { };
+	copyRegion.srcOffset = 0;
+	copyRegion.dstOffset = 0;
+	copyRegion.size = size;
+
+	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+	vkEndCommandBuffer(commandBuffer);
+
+	// Submit on transfer queue:
+	VkSubmitInfo submitInfo = { };
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	
+	// Wait for the transfer to complete. If there were multiple transfers, it would
+	// be a good idea to use a fence and wait on all of them; this allows more 
+	// driver optimization	
+	vkQueueWaitIdle(graphicsQueue);
+}
+
 bool VulkanApplication::checkDeviceExtensionSupport(const VkPhysicalDevice& device) const
 { 
 	uint32_t extensionCount;
@@ -1315,6 +1396,9 @@ void VulkanApplication::cleanup()
 
 	vkDestroyBuffer(device, vertexBuffer, nullptr);
 	vkFreeMemory(device, vertexBufferMemory, nullptr);
+
+	vkDestroyBuffer(device, vertexStagingBuffer, nullptr);
+	vkFreeMemory(device, vertexStagingMemory, nullptr);
 
 	// Clean up synchro stuff
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);
