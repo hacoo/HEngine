@@ -1027,8 +1027,13 @@ void VulkanApplication::mainLoop()
 	{
 		glfwPollEvents();
 
+		// Tick();
+
+
 		drawFrame();
 	}
+
+	vkDeviceWaitIdle(device);
 }
 
 void VulkanApplication::drawFrame()
@@ -1037,13 +1042,18 @@ void VulkanApplication::drawFrame()
 	// 1. Get image from swap chain
 	// 2. Execute command buffer with that image attached
 	// 3. Return image to swap chain
-	
+
+	// Wait for queue to go idle from drawing LAST frame -- this way game tick,
+	// etc, can continue while previous frame renders
+	vkQueueWaitIdle(presentQueue);
+
 	uint32_t imageIndex = 0xDEADBEEF;
 	uint64_t timeout = std::numeric_limits<uint64_t>::max();
 
 	// Get next image from swapchain, signal imageAvailableSem when done. Records into imageIndex
 	vkAcquireNextImageKHR(device, swapchain, timeout, imageAvailableSem, VK_NULL_HANDLE, &imageIndex);
 
+	// Submit draw commands:
 	VkSubmitInfo submitInfo = { };
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -1074,6 +1084,25 @@ void VulkanApplication::drawFrame()
 	{
 		throw std::runtime_error("failed to submit to graphics queue");
 	}
+
+	// Present image to the screen
+	VkPresentInfoKHR presentInfo = { };
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	// Wait for image to finish rendering before presenation:
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;
+
+	// Usually, there is only one swapchain!
+	VkSwapchainKHR swapchains[] = { swapchain };
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapchains;
+	presentInfo.pImageIndices = &imageIndex;
+
+	// Individual results for each swapchain - not needed, since there is only one
+	presentInfo.pResults = nullptr;
+	
+	vkQueuePresentKHR(presentQueue, &presentInfo);
+
 }
 
 void VulkanApplication::cleanup()
