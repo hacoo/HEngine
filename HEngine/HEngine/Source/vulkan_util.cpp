@@ -1,7 +1,8 @@
 
 #include "vulkan_util.h"
 
-VkVertexInputBindingDescription VulkanUtil::getBindingDescription(Vertex2D& vertex)
+template <typename Vertex2D>
+VkVertexInputBindingDescription VulkanUtil::getBindingDescription()
 {
 	// We have only one array of vertex data, hence, only one binding
 	VkVertexInputBindingDescription bindingDescription = { };
@@ -12,6 +13,7 @@ VkVertexInputBindingDescription VulkanUtil::getBindingDescription(Vertex2D& vert
 	return bindingDescription;
 }
 
+template <typename Vertex2D>
 std::array<VkVertexInputAttributeDescription, 2> VulkanUtil::getAttributeDescriptions()
 {
 		std::array<VkVertexInputAttributeDescription, 2> descriptions = { };

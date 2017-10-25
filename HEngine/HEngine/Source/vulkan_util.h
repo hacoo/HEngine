@@ -10,7 +10,9 @@
 
 namespace VulkanUtil
 {
-	VkVertexInputBindingDescription getBindingDescription(Vertex2D& vertex);
+	template<typename Vertex2D>
+	VkVertexInputBindingDescription getBindingDescription();
 
+	template<typename Vertex2D>
 	std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
 };
