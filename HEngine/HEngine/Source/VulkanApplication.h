@@ -198,6 +198,18 @@ private: // data
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
+	// Vertex buffer
+	const std::vector<Vertex2D> vertices = 
+	{
+{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+{{0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}},
+{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+	};
+
+	size_t vertexBufferSize;
+	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
+
 	// Framebuffers
 	std::vector <VkFramebuffer> swapchainFramebuffers;
 
@@ -256,11 +268,20 @@ private: // methods
 	// Set up command pool
 	void initCommandPool();
 
+	// Set up vertex buffers
+	void initVertexBuffers();
+
 	// Set up command buffers
 	void initCommandBuffers();
 
 	// Set up semaphores / other synchro stuff
 	void initSynchro();
+
+	// Fill the vertex buffer once created
+	void fillVertexBuffer();
+
+	// Choose the best available type of GPU memory
+	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	// create shader module from raw bytecode
 	VkShaderModule createShaderModule(const std::vector<char>& bytecode, VkDevice& device);

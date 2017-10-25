@@ -7,6 +7,7 @@
 
 void VulkanApplication::run()
 {
+
 	// Create glfw window
 	initWindow();
 
@@ -23,9 +24,14 @@ void VulkanApplication::run()
 	initGraphicsPipeline();
 	initFramebuffers();
 	initCommandPool();
+	initVertexBuffers();
 	initCommandBuffers();
 	initSynchro();
 	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
+
+	fillVertexBuffer();
+
+	// turn window back on:
 
 	mainLoop();
 
@@ -39,6 +45,9 @@ void VulkanApplication::initWindow()
 
 	// Specify no client API, since we are using Vulkan (otherwise it will try to use OpenGL or something)
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+	// Don't show window until vulkan boots
+	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
 	// Turn off resizing for now
 	// glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -449,12 +458,15 @@ void VulkanApplication::initGraphicsPipeline()
 	VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
 	// Describes format of vertex data, attributes passed to vert shader:
+	auto vertexBindingDescription = VulkanUtil::getBindingDescription<Vertex2D>();
+	auto vertexAttributeDescriptions = VulkanUtil::getAttributeDescriptions<Vertex2D>();
+
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo = { };
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertexInputInfo.vertexBindingDescriptionCount = 0;
-	vertexInputInfo.pVertexBindingDescriptions = nullptr;
-	vertexInputInfo.vertexAttributeDescriptionCount = 0;
-	vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+	vertexInputInfo.vertexBindingDescriptionCount = 1;
+	vertexInputInfo.pVertexBindingDescriptions = &vertexBindingDescription;
+	vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttributeDescriptions.size());
+	vertexInputInfo.pVertexAttributeDescriptions = vertexAttributeDescriptions.data();
 
 	// What kind of geometry to draw from vertices, also, should primitive resart be enabled
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo = { };
@@ -653,6 +665,59 @@ void VulkanApplication::initCommandPool()
 	
 }
 
+void VulkanApplication::initVertexBuffers()
+{
+	VkBufferCreateInfo vbInfo = { };
+	vbInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	vbInfo.size = sizeof(vertices[0]) * vertices.size();
+	vbInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	vbInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateBuffer(device, &vbInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to created vertex buffer");
+	}
+
+	vertexBufferSize = vbInfo.size;
+
+	// Buffer handle is created, but no underlying memory. Let's make it:
+	VkMemoryRequirements memReqs;
+	vkGetBufferMemoryRequirements(device, vertexBuffer, &memReqs);
+	
+	// memory must be visible / writable by CPU so we can but vertices there
+	VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+	VkMemoryAllocateInfo allocInfo = { };
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memReqs.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to allocated vertex buffer memory");
+	}
+
+	vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+}
+
+void VulkanApplication::fillVertexBuffer()
+{
+	void* data;
+
+	vkMapMemory(device, vertexBufferMemory, 0, static_cast<VkDeviceSize>(vertexBufferSize), 0, &data);
+
+	memcpy(data, vertices.data(), vertexBufferSize);
+
+	// Note: For some type of memory, you would need to call vkFlushMappedMemoryRanges after writing,
+	// to ensure the write makes it to the device. This isn't necessery because we specified the 
+	// COHERENT bit. 
+	//
+	// Similarly, if reading memory, you would need to call vkInvalidateMappedMemoryRanges before
+	// reading, if the memory is not coherent.	
+
+	vkUnmapMemory(device, vertexBufferMemory);
+}
+
 void VulkanApplication::initCommandBuffers()
 {
 	commandBuffers.resize(swapchainFramebuffers.size());
@@ -692,18 +757,26 @@ void VulkanApplication::initCommandBuffers()
 		renderPassInfo.clearValueCount = 1;
 		renderPassInfo.pClearValues = &clearColor;
 
+		// VULKAN COMMANDS
 		vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+		VkBuffer vertexBuffers[] = { vertexBuffer };
+		VkDeviceSize offsets[] = { 0 };
+		vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 		
-		vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+		// Draw contents of vertex buffer
+		vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
 		vkCmdEndRenderPass(commandBuffers[i]);
+		// END VULKAN COMMANDS
 
 		if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS)
 		{
 			throw std::runtime_error("Could not record command buffer");
 		}
+
 	}
 }
 
@@ -720,7 +793,6 @@ void VulkanApplication::initSynchro()
 	}
 }
 
-
 void VulkanApplication::recreateSwapchain()
 {
 	vkDeviceWaitIdle(device);
@@ -734,6 +806,23 @@ void VulkanApplication::recreateSwapchain()
 	initGraphicsPipeline();
 	initFramebuffers();
 	initCommandBuffers();
+}
+
+uint32_t VulkanApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
+	{
+		if (typeFilter & (1 << i) && 
+			(memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+		{
+			return i;
+		}
+	}
+	
+	throw std::runtime_error("no GPU memory type matching the requested filter was found");
 }
 
 VkShaderModule VulkanApplication::createShaderModule(const std::vector<char>& bytecode, 
@@ -1054,12 +1143,15 @@ void VulkanApplication::onWindowResized(GLFWwindow* window, int width, int heigh
 
 void VulkanApplication::mainLoop()
 {
+	// Don't show window until the first frame is drawn (otherwise you get a very bright white window)
+	drawFrame();
+	glfwShowWindow(window);
+
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
 
 		// Tick();
-
 
 		drawFrame();
 	}
@@ -1192,6 +1284,9 @@ void VulkanApplication::cleanup()
 	std::cout << "Beginning Vulkan teardown... " << std::endl;
 
 	cleanupSwapchain();
+
+	vkDestroyBuffer(device, vertexBuffer, nullptr);
+	vkFreeMemory(device, vertexBufferMemory, nullptr);
 
 	// Clean up synchro stuff
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);

@@ -21,7 +21,6 @@
   <ItemGroup>
     <ClCompile Include="Source\main.cpp" />
     <ClCompile Include="Source\VulkanApplication.cpp" />
-    <ClCompile Include="Source\vulkan_util.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\render_types.h" />
