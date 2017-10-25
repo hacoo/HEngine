@@ -1074,16 +1074,41 @@ void VulkanApplication::drawFrame()
 	// 2. Execute command buffer with that image attached
 	// 3. Return image to swap chain
 
-	// Wait for queue to go idle from drawing LAST frame -- this way game tick,
-	// etc, can continue while previous frame renders
-	vkQueueWaitIdle(presentQueue);
-
 	uint32_t imageIndex = 0xDEADBEEF;
 	uint64_t timeout = std::numeric_limits<uint64_t>::max();
 
 	// Get next image from swapchain, signal imageAvailableSem when done. Records into imageIndex
-	vkAcquireNextImageKHR(device, swapchain, timeout, imageAvailableSem, VK_NULL_HANDLE, &imageIndex);
+	VkResult result = vkAcquireNextImageKHR(device,
+		swapchain,
+		timeout,
+		imageAvailableSem,
+		VK_NULL_HANDLE,
+		&imageIndex);
+	
+	if (result == VK_ERROR_OUT_OF_DATE_KHR)
+	{
+		// Something changed, and the swapchain is no longer compatible -- recreate it
+		recreateSwapchain();
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+	{
+		throw std::runtime_error("could not get next swapchain image");
+	}
 
+	// Wait for queue to go idle from drawing LAST frame -- this way game tick,
+	// etc, can continue while previous frame renders
+	result = vkQueueWaitIdle(presentQueue);
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+	{
+		// At this point, recreate also if swapchain is suboptimal,
+		recreateSwapchain();
+	} 
+	else if (result != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to present swap chain image");
+	}
+	
 	// Submit draw commands:
 	VkSubmitInfo submitInfo = { };
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
