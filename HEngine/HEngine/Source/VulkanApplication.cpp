@@ -25,11 +25,13 @@ void VulkanApplication::run()
 	initFramebuffers();
 	initCommandPools();
 	initVertexBuffers();
+	initIndexBuffers();
 	initCommandBuffers();
 	initSynchro();
 	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
 
 	fillVertexBuffer();
+	fillIndexBuffer();
 
 	std::cout << "Graphics queue index: " << queueIndices.graphics << std::endl;
 	std::cout << "Present queue index: " << queueIndices.present << std::endl;
@@ -764,6 +766,109 @@ static_cast<uint32_t>(queueIndices.transfer)
 	vkBindBufferMemory(device, vertexStagingBuffer, vertexStagingMemory, 0);
 }
 
+void VulkanApplication::initIndexBuffers()
+{
+	// Create index buffer
+	VkBufferUsageFlags bufUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+	VkBufferCreateInfo bufInfo = { };
+	bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufInfo.size = sizeof(indices[0]) * indices.size();
+	bufInfo.usage = bufUsage;
+	// bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	// Allow both graphics and transfer queues to access this buffer.
+	// If we used the graphics queue for both ops, you'd use exclusive mode.
+	uint32_t queues[] = {
+static_cast<uint32_t>(queueIndices.graphics),
+static_cast<uint32_t>(queueIndices.transfer)
+	};
+
+	bufInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+	bufInfo.queueFamilyIndexCount = 2;
+	bufInfo.pQueueFamilyIndices = queues;
+
+	if (vkCreateBuffer(device, &bufInfo, nullptr, &indexBuffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to created index buffer");
+	}
+
+	indexBufferSize = bufInfo.size;
+
+	// Buffer handle is created, but no underlying memory. Let's make it:
+	VkMemoryRequirements memReqs;
+	vkGetBufferMemoryRequirements(device, indexBuffer, &memReqs);
+	
+	// index buffer should be fast, local memory
+	VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	VkMemoryAllocateInfo allocInfo = { };
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memReqs.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &indexBufferMemory) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to allocated index buffer memory");
+	}
+
+	vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
+
+	// Create the staging buffer. CPU will transfer here.
+	// Re-use memreqs and allocInfo
+	uint32_t transferQueueIndex = queueIndices.transfer;
+	bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	bufInfo.queueFamilyIndexCount = 1;
+	bufInfo.pQueueFamilyIndices = &transferQueueIndex;
+
+	bufUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	bufInfo.usage = bufUsage;
+	
+	if (vkCreateBuffer(device, &bufInfo, nullptr, &indexStagingBuffer) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to created index staging buffer");
+	}
+
+	indexStagingBufferSize = bufInfo.size;
+
+	vkGetBufferMemoryRequirements(device, indexStagingBuffer, &memReqs);
+
+	// Staging 
+	memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	allocInfo.allocationSize = memReqs.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &indexStagingMemory) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to allocated index staging memory");
+	}
+
+	vkBindBufferMemory(device, indexStagingBuffer, indexStagingMemory, 0);
+}
+
+void VulkanApplication::fillIndexBuffer()
+{
+	void* data;
+
+	// Transfer to staging memory first:
+	vkMapMemory(device, indexStagingMemory, 0, 
+		static_cast<VkDeviceSize>(indexStagingBufferSize), 0, &data);
+
+	memcpy(data, indices.data(), indexStagingBufferSize);
+
+	// Note: For some type of memory, you would need to call vkFlushMappedMemoryRanges after writing,
+	// to ensure the write makes it to the device. This isn't necessery because we specified the 
+	// COHERENT bit. 
+	//
+	// Similarly, if reading memory, you would need to call vkInvalidateMappedMemoryRanges before
+	// reading, if the memory is not coherent.	
+
+	vkUnmapMemory(device, indexStagingMemory);
+
+	// Copy into device memory
+	copyBuffer(indexStagingBuffer, indexBuffer, indexStagingBufferSize);
+}
+
 void VulkanApplication::fillVertexBuffer()
 {
 	void* data;
@@ -833,9 +938,13 @@ void VulkanApplication::initCommandBuffers()
 		VkBuffer vertexBuffers[] = { vertexBuffer };
 		VkDeviceSize offsets[] = { 0 };
 		vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-		
+		vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
 		// Draw contents of vertex buffer
-		vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+		// vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+		
+		// Draw using index buffer
+		vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 		vkCmdEndRenderPass(commandBuffers[i]);
 		// END VULKAN COMMANDS
@@ -1394,12 +1503,19 @@ void VulkanApplication::cleanup()
 
 	cleanupSwapchain();
 
+	// Clean up buffers
 	vkDestroyBuffer(device, vertexBuffer, nullptr);
 	vkFreeMemory(device, vertexBufferMemory, nullptr);
 
 	vkDestroyBuffer(device, vertexStagingBuffer, nullptr);
 	vkFreeMemory(device, vertexStagingMemory, nullptr);
 
+	vkDestroyBuffer(device, indexBuffer, nullptr);
+	vkFreeMemory(device, indexBufferMemory, nullptr);
+
+	vkDestroyBuffer(device, indexStagingBuffer, nullptr);
+	vkFreeMemory(device, indexStagingMemory, nullptr);
+	
 	// Clean up synchro stuff
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);
 	vkDestroySemaphore(device, renderFinishedSem, nullptr);

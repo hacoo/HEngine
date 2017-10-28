@@ -253,13 +253,8 @@ private: // data
 {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
 	};
 
-	// Vertex index buffer
-	const std::vector<size_t> indices = 
-	{
-		0, 1, 2, 2, 3, 0
-	};
 
-	// Vertex buffer hold actual vertices to draw
+	// Vertex buffers hold actual vertices to draw
 	size_t vertexBufferSize;
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
@@ -270,7 +265,22 @@ private: // data
 	size_t vertexStagingBufferSize;
 	VkBuffer vertexStagingBuffer;
 	VkDeviceMemory vertexStagingMemory;
-	
+
+	// Vertex index buffer 
+	const std::vector<uint32_t> indices = 
+	{
+		0, 1, 2, 2, 3, 0
+	};
+
+	// Index buffer holds indices of vertices used in triangles
+	size_t indexBufferSize;
+	VkBuffer indexBuffer;
+	VkDeviceMemory indexBufferMemory;
+
+	size_t indexStagingBufferSize;
+	VkBuffer indexStagingBuffer;
+	VkDeviceMemory indexStagingMemory;
+
 	// Framebuffers
 	std::vector <VkFramebuffer> swapchainFramebuffers;
 
@@ -333,14 +343,20 @@ private: // methods
 	// Set up vertex buffers
 	void initVertexBuffers();
 
+	// Set up index buffers
+	void initIndexBuffers();
+
 	// Set up command buffers
 	void initCommandBuffers();
 
 	// Set up semaphores / other synchro stuff
 	void initSynchro();
 
-	// Fill the vertex buffer once created
+	// Fill the vertex buffer through staging once created
 	void fillVertexBuffer();
+
+	// Fill index buffer through staging once created
+	void fillIndexBuffer();
 
 	// Choose the best available type of GPU memory
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
