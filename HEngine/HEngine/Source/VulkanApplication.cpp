@@ -21,11 +21,13 @@ void VulkanApplication::run()
 	initSwapchain();
 	initImageViews();
 	createRenderPass();
+	initDescriptorSetLayout();
 	initGraphicsPipeline();
 	initFramebuffers();
 	initCommandPools();
 	initVertexBuffers();
 	initIndexBuffers();
+	initUniformBuffer();
 	initCommandBuffers();
 	initSynchro();
 	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
@@ -687,163 +689,86 @@ void VulkanApplication::initCommandPools()
 
 void VulkanApplication::initVertexBuffers()
 {
-
-	// Create vertex buffer
-	VkBufferUsageFlags bufUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-	VkBufferCreateInfo bufInfo = { };
-	bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufInfo.size = sizeof(vertices[0]) * vertices.size();
-	bufInfo.usage = bufUsage;
-	// bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
 	// Allow both graphics and transfer queues to access this buffer.
 	// If we used the graphics queue for both ops, you'd use exclusive mode.
-	uint32_t queues[] = {
+	std::vector<uint32_t> vertexQueues = {
 static_cast<uint32_t>(queueIndices.graphics),
 static_cast<uint32_t>(queueIndices.transfer)
 	};
+	vertexBufferSize = sizeof(vertices[0]) * vertices.size();
 
-	bufInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-	bufInfo.queueFamilyIndexCount = 2;
-	bufInfo.pQueueFamilyIndices = queues;
-
-	if (vkCreateBuffer(device, &bufInfo, nullptr, &vertexBuffer) != VK_SUCCESS)
+	if (!createVkBuffer(vertexBuffer,
+		vertexBufferMemory,
+		device,
+		physicalDevice,
+		vertexBufferSize,
+		vertexQueues,
+		VK_SHARING_MODE_CONCURRENT,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
 	{
-		throw std::runtime_error("failed to created vertex buffer");
+		throw std::runtime_error("failed to create vertex buffer");
 	}
 
-	vertexBufferSize = bufInfo.size;
+	std::vector<uint32_t> vertexStagingQueues = {
+static_cast<uint32_t>(queueIndices.transfer)
+	};
+	vertexStagingBufferSize = sizeof(vertices[0]) * vertices.size();
 
-	// Buffer handle is created, but no underlying memory. Let's make it:
-	VkMemoryRequirements memReqs;
-	vkGetBufferMemoryRequirements(device, vertexBuffer, &memReqs);
-	
-	// Vertex buffer should be fast, local memory
-	VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-	VkMemoryAllocateInfo allocInfo = { };
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = memReqs.size;
-	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
-
-	if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS)
+	if (!createVkBuffer(vertexStagingBuffer,
+		vertexStagingMemory,
+		device,
+		physicalDevice,
+		vertexStagingBufferSize,
+		vertexStagingQueues,
+		VK_SHARING_MODE_EXCLUSIVE,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 	{
-		throw std::runtime_error("failed to allocated vertex buffer memory");
+		throw std::runtime_error("failed to create vertex staging buffer");
 	}
-
-	vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
-
-	// Create the staging buffer. CPU will transfer here.
-	// Re-use memreqs and allocInfo
-	uint32_t transferQueueIndex = queueIndices.transfer;
-	bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	bufInfo.queueFamilyIndexCount = 1;
-	bufInfo.pQueueFamilyIndices = &transferQueueIndex;
-
-	bufUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	bufInfo.usage = bufUsage;
-	
-	if (vkCreateBuffer(device, &bufInfo, nullptr, &vertexStagingBuffer) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to created vertex staging buffer");
-	}
-
-	vertexStagingBufferSize = bufInfo.size;
-
-	vkGetBufferMemoryRequirements(device, vertexStagingBuffer, &memReqs);
-
-	// Staging 
-	memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	allocInfo.allocationSize = memReqs.size;
-	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
-
-	if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexStagingMemory) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to allocated vertex staging memory");
-	}
-
-	vkBindBufferMemory(device, vertexStagingBuffer, vertexStagingMemory, 0);
 }
 
 void VulkanApplication::initIndexBuffers()
-{
-	// Create index buffer
-	VkBufferUsageFlags bufUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-	VkBufferCreateInfo bufInfo = { };
-	bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufInfo.size = sizeof(indices[0]) * indices.size();
-	bufInfo.usage = bufUsage;
-	// bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
+{		
 	// Allow both graphics and transfer queues to access this buffer.
 	// If we used the graphics queue for both ops, you'd use exclusive mode.
-	uint32_t queues[] = {
+	std::vector<uint32_t> indexQueues = {
 static_cast<uint32_t>(queueIndices.graphics),
 static_cast<uint32_t>(queueIndices.transfer)
 	};
+	indexBufferSize = sizeof(indices[0]) * indices.size();
 
-	bufInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-	bufInfo.queueFamilyIndexCount = 2;
-	bufInfo.pQueueFamilyIndices = queues;
-
-	if (vkCreateBuffer(device, &bufInfo, nullptr, &indexBuffer) != VK_SUCCESS)
+	if (!createVkBuffer(indexBuffer,
+		indexBufferMemory,
+		device,
+		physicalDevice,
+		indexBufferSize,
+		indexQueues,
+		VK_SHARING_MODE_CONCURRENT,
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
 	{
-		throw std::runtime_error("failed to created index buffer");
+		throw std::runtime_error("failed to create index buffer");
 	}
 
-	indexBufferSize = bufInfo.size;
+	std::vector<uint32_t> indexStagingQueues = {
+static_cast<uint32_t>(queueIndices.transfer)
+	};
+	indexStagingBufferSize = sizeof(indices[0]) * indices.size();
 
-	// Buffer handle is created, but no underlying memory. Let's make it:
-	VkMemoryRequirements memReqs;
-	vkGetBufferMemoryRequirements(device, indexBuffer, &memReqs);
-	
-	// index buffer should be fast, local memory
-	VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-	VkMemoryAllocateInfo allocInfo = { };
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = memReqs.size;
-	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
-
-	if (vkAllocateMemory(device, &allocInfo, nullptr, &indexBufferMemory) != VK_SUCCESS)
+	if (!createVkBuffer(indexStagingBuffer,
+		indexStagingMemory,
+		device,
+		physicalDevice,
+		indexStagingBufferSize,
+		indexStagingQueues,
+		VK_SHARING_MODE_EXCLUSIVE,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 	{
-		throw std::runtime_error("failed to allocated index buffer memory");
+		throw std::runtime_error("failed to create index staging buffer");
 	}
-
-	vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
-
-	// Create the staging buffer. CPU will transfer here.
-	// Re-use memreqs and allocInfo
-	uint32_t transferQueueIndex = queueIndices.transfer;
-	bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	bufInfo.queueFamilyIndexCount = 1;
-	bufInfo.pQueueFamilyIndices = &transferQueueIndex;
-
-	bufUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	bufInfo.usage = bufUsage;
-	
-	if (vkCreateBuffer(device, &bufInfo, nullptr, &indexStagingBuffer) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to created index staging buffer");
-	}
-
-	indexStagingBufferSize = bufInfo.size;
-
-	vkGetBufferMemoryRequirements(device, indexStagingBuffer, &memReqs);
-
-	// Staging 
-	memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	allocInfo.allocationSize = memReqs.size;
-	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags);
-
-	if (vkAllocateMemory(device, &allocInfo, nullptr, &indexStagingMemory) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to allocated index staging memory");
-	}
-
-	vkBindBufferMemory(device, indexStagingBuffer, indexStagingMemory, 0);
 }
 
 void VulkanApplication::fillIndexBuffer()
@@ -953,7 +878,6 @@ void VulkanApplication::initCommandBuffers()
 		{
 			throw std::runtime_error("Could not record command buffer");
 		}
-
 	}
 }
 
@@ -967,6 +891,34 @@ void VulkanApplication::initSynchro()
 		vkCreateSemaphore(device, &semInfo, nullptr, &renderFinishedSem) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create semaphores");
+	}
+}
+
+void VulkanApplication::initUniformBuffer()
+{
+	VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+	
+}
+
+void VulkanApplication::initDescriptorSetLayout()
+{
+	VkDescriptorSetLayoutBinding uboLayoutBinding = { };
+
+	// 'binding' corresponds to index used in shader
+	uboLayoutBinding.binding = 0;
+	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo = { };
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings = &uboLayoutBinding;
+
+	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to created descriptor set layout");
 	}
 }
 
@@ -985,7 +937,9 @@ void VulkanApplication::recreateSwapchain()
 	initCommandBuffers();
 }
 
-uint32_t VulkanApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+uint32_t VulkanApplication::findMemoryType(uint32_t typeFilter,
+	VkMemoryPropertyFlags properties, 
+	VkPhysicalDevice& physicalDevice)
 {
 	VkPhysicalDeviceMemoryProperties memProperties;
 	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -1263,6 +1217,46 @@ void VulkanApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDev
 	vkQueueWaitIdle(graphicsQueue);
 }
 
+bool VulkanApplication::createVkBuffer(VkBuffer& buffer,
+	VkDeviceMemory& memory,
+	VkDevice& device,
+	VkPhysicalDevice& physicalDevice,
+	size_t size,
+	std::vector<uint32_t>& queueIndices,
+	VkSharingMode sharingMode,
+	VkBufferUsageFlags usageFlags,
+	VkMemoryPropertyFlags memFlags)
+{	
+	VkBufferCreateInfo bufInfo = { };
+	bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufInfo.size = size;
+	bufInfo.usage = usageFlags;
+	bufInfo.sharingMode = sharingMode;
+	bufInfo.queueFamilyIndexCount = static_cast<uint32_t>(queueIndices.size());
+	bufInfo.pQueueFamilyIndices = queueIndices.data();
+
+	if (vkCreateBuffer(device, &bufInfo, nullptr, &buffer) != VK_SUCCESS)
+	{
+		return false;
+	}
+
+	VkMemoryRequirements memReqs;
+	vkGetBufferMemoryRequirements(device, buffer, &memReqs);
+
+	VkMemoryAllocateInfo allocInfo = { };
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memReqs.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memReqs.memoryTypeBits, memFlags, physicalDevice);
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS)
+	{
+		return false;
+	}
+
+	vkBindBufferMemory(device, buffer, memory, 0);
+	return true;
+}
+
 bool VulkanApplication::checkDeviceExtensionSupport(const VkPhysicalDevice& device) const
 { 
 	uint32_t extensionCount;
@@ -1502,6 +1496,8 @@ void VulkanApplication::cleanup()
 	std::cout << "Beginning Vulkan teardown... " << std::endl;
 
 	cleanupSwapchain();
+
+	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
 	// Clean up buffers
 	vkDestroyBuffer(device, vertexBuffer, nullptr);

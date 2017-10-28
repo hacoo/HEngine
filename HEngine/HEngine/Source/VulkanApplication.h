@@ -43,6 +43,7 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
+
 class VulkanApplication{
 public: // methods
 
@@ -65,7 +66,7 @@ public: // methods
 
 	void run();
 
-public: // classes
+protected: // classes
 
 	// Records the queue family indices for this machine
 	struct QueueFamilyIndices
@@ -206,10 +207,21 @@ public: // classes
 		}
 	};
 
-private: // data
+	// Passes uniform paramters to shaders
+	struct UniformBufferObject
+	{
+		glm::mat4 model;
+		glm::mat4 view;
+		glm::mat4 proj;
+	};
+
+protected: // data
+
 	GLFWwindow* window;
 	uint32_t width = 800;
 	uint32_t height = 600;
+
+	UniformBufferObject ubo;
 
 	// Vulkan stuff:
 	VkInstance instance;
@@ -241,6 +253,7 @@ private: // data
 
 	// Pipeline
 	VkRenderPass renderPass;
+	VkDescriptorSetLayout descriptorSetLayout;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
@@ -349,8 +362,14 @@ private: // methods
 	// Set up command buffers
 	void initCommandBuffers();
 
+	// Set up UBO
+	void initUniformBuffer();
+
 	// Set up semaphores / other synchro stuff
 	void initSynchro();
+
+	// Set up UBO descriptor set
+	void initDescriptorSetLayout();
 
 	// Fill the vertex buffer through staging once created
 	void fillVertexBuffer();
@@ -359,7 +378,7 @@ private: // methods
 	void fillIndexBuffer();
 
 	// Choose the best available type of GPU memory
-	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+	static uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, VkPhysicalDevice& physicalDevice);
 
 	// create shader module from raw bytecode
 	VkShaderModule createShaderModule(const std::vector<char>& bytecode, VkDevice& device);
@@ -393,6 +412,17 @@ private: // methods
  
 	// Copy GPU memory around
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+	// Create a Vulkan buffer and corresponding memory. Returns true on success, false on failure.
+	static bool createVkBuffer(VkBuffer& buffer,
+		VkDeviceMemory& memory,
+		VkDevice& device,
+		VkPhysicalDevice& physicalDevice,
+		size_t size,
+		std::vector<uint32_t>& queueIndices,
+		VkSharingMode sharingMode,
+		VkBufferUsageFlags usageFlags,
+		VkMemoryPropertyFlags memFlags);
 
 	// Callbacks:
 
