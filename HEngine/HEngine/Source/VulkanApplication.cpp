@@ -28,6 +28,8 @@ void VulkanApplication::run()
 	initVertexBuffers();
 	initIndexBuffers();
 	initUniformBuffer();
+	initDescriptorPool();
+	initDescriptorSet();
 	initCommandBuffers();
 	initSynchro();
 	std::cout << std::endl << "Vulkan initialized OK " << std::endl;	
@@ -523,7 +525,7 @@ void VulkanApplication::initGraphicsPipeline()
 
 	// Cull back-facing triangles
 	rasterizerInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizerInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizerInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
 	// Depth bias -- usually used to resolve z-layering issues on coplanar geometry, e.g., shadows
 	// I.e., you'd give everything in the shadow buffer a small bias
@@ -588,8 +590,8 @@ void VulkanApplication::initGraphicsPipeline()
 	// These aren't used yet.	
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = { };
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 0;
-	pipelineLayoutInfo.pSetLayouts = nullptr;
+	pipelineLayoutInfo.setLayoutCount = 1;
+	pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 	pipelineLayoutInfo.pPushConstantRanges = 0;
 
@@ -864,6 +866,8 @@ void VulkanApplication::initCommandBuffers()
 		VkDeviceSize offsets[] = { 0 };
 		vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 		vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 
+			0, 1, &descriptorSet, 0, nullptr);
 
 		// Draw contents of vertex buffer
 		// vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
@@ -897,7 +901,27 @@ void VulkanApplication::initSynchro()
 void VulkanApplication::initUniformBuffer()
 {
 	VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-	
+
+	std::vector<uint32_t> queues = {
+static_cast<uint32_t>(queueIndices.graphics)
+	};
+	uinformBufferSize = sizeof(UniformBufferObject);
+
+	// Host will write to uniform buffer directly, as we expect it to change vert often
+	bool result = createVkBuffer(uniformBuffer,
+		uniformBufferMemory,
+		device,
+		physicalDevice,
+		uinformBufferSize,
+		queues,
+		VK_SHARING_MODE_EXCLUSIVE,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	if (!result)
+	{
+		throw std::runtime_error("failed to create uniform buffer");
+	}
 }
 
 void VulkanApplication::initDescriptorSetLayout()
@@ -922,6 +946,60 @@ void VulkanApplication::initDescriptorSetLayout()
 	}
 }
 
+void VulkanApplication::initDescriptorPool()
+{
+	VkDescriptorPoolSize poolSize = { };
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.descriptorCount = 1;
+
+	VkDescriptorPoolCreateInfo poolInfo = { };
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.maxSets = 1;
+
+	if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to create descriptor pool");
+	}
+}
+
+void VulkanApplication::initDescriptorSet()
+{
+	VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+	VkDescriptorSetAllocateInfo allocInfo = { };
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = layouts;
+
+	// descriptor set is automatically cleand up with descriptor pool
+	if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to created descriptor set");
+	}
+
+	// Configure descriptors contained in set:
+	
+	VkDescriptorBufferInfo bufferInfo = { };
+	bufferInfo.buffer = uniformBuffer;
+	bufferInfo.offset = 0;
+	bufferInfo.range = sizeof(UniformBufferObject);
+
+	VkWriteDescriptorSet descWrite = { };
+	descWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descWrite.dstSet = descriptorSet;
+	descWrite.dstBinding = 0;
+	descWrite.dstArrayElement = 0;
+	descWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descWrite.descriptorCount = 1;
+	descWrite.pBufferInfo = &bufferInfo;
+	descWrite.pImageInfo = nullptr;
+	descWrite.pTexelBufferView = nullptr;
+
+	vkUpdateDescriptorSets(device, 1, &descWrite, 0, nullptr);
+}
+
 void VulkanApplication::recreateSwapchain()
 {
 	vkDeviceWaitIdle(device);
@@ -935,6 +1013,32 @@ void VulkanApplication::recreateSwapchain()
 	initGraphicsPipeline();
 	initFramebuffers();
 	initCommandBuffers();
+}
+
+void VulkanApplication::updateUniformBuffer()
+{
+	static auto startTime = std::chrono::high_resolution_clock::now();
+
+	auto currentTime = std::chrono::high_resolution_clock::now();
+	float time = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count() / 1000.0f;
+
+	UniformBufferObject ubo = { };	
+	ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+	// View is above origin at 45 degree angle
+	ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+	// 45 degree vertical FOV, aspect ratio as per window size, near plane at 1.0, far at 10.0
+	ubo.proj = glm::perspective(glm::radians(45.0f), swapchainExtent.width / (float)swapchainExtent.height, 1.0f, 10.0f);
+
+	// In openGL, y-coordinate of clip is inverted. GLM expects this
+	ubo.proj[1][1] *= -1;
+
+	// GLM vectors can be copied directly; their format is compatible with shader inputs
+	void* data;
+	vkMapMemory(device, uniformBufferMemory, 0, sizeof(ubo), 0, &data);
+	memcpy(data, &ubo, sizeof(ubo));
+	vkUnmapMemory(device, uniformBufferMemory);
 }
 
 uint32_t VulkanApplication::findMemoryType(uint32_t typeFilter,
@@ -1356,6 +1460,7 @@ void VulkanApplication::onWindowResized(GLFWwindow* window, int width, int heigh
 void VulkanApplication::mainLoop()
 {
 	// Don't show window until the first frame is drawn (otherwise you get a very bright white window)
+	updateUniformBuffer();
 	drawFrame();
 	glfwShowWindow(window);
 
@@ -1364,7 +1469,7 @@ void VulkanApplication::mainLoop()
 		glfwPollEvents();
 
 		// Tick();
-
+		updateUniformBuffer();
 		drawFrame();
 	}
 
@@ -1498,6 +1603,7 @@ void VulkanApplication::cleanup()
 	cleanupSwapchain();
 
 	vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 
 	// Clean up buffers
 	vkDestroyBuffer(device, vertexBuffer, nullptr);
@@ -1511,7 +1617,10 @@ void VulkanApplication::cleanup()
 
 	vkDestroyBuffer(device, indexStagingBuffer, nullptr);
 	vkFreeMemory(device, indexStagingMemory, nullptr);
-	
+
+	vkDestroyBuffer(device, uniformBuffer, nullptr);
+	vkFreeMemory(device, uniformBufferMemory, nullptr);
+		
 	// Clean up synchro stuff
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);
 	vkDestroySemaphore(device, renderFinishedSem, nullptr);

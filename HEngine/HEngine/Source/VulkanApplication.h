@@ -10,11 +10,17 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <chrono>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW\glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW\glfw3native.h>
+
+#define GLM_FORCE_RADIANS
+#include<glm/glm.hpp>
+#include<glm/gtc/matrix_transform.hpp>
+
 
 #include "render_types.h"
 #include "vulkan_util.h"
@@ -221,8 +227,6 @@ protected: // data
 	uint32_t width = 800;
 	uint32_t height = 600;
 
-	UniformBufferObject ubo;
-
 	// Vulkan stuff:
 	VkInstance instance;
 	VkDebugReportCallbackEXT callback;
@@ -230,6 +234,10 @@ protected: // data
 	VkDevice device;
 	QueueFamilyIndices queueIndices;
 	VkSurfaceKHR surface;
+
+	// UBO descriptors
+	VkDescriptorPool descriptorPool;
+	VkDescriptorSet descriptorSet;
 
 	// swapchain
 	VkSwapchainKHR swapchain;
@@ -278,6 +286,11 @@ protected: // data
 	size_t vertexStagingBufferSize;
 	VkBuffer vertexStagingBuffer;
 	VkDeviceMemory vertexStagingMemory;
+
+	// 
+	size_t uinformBufferSize;
+	VkBuffer uniformBuffer;
+	VkDeviceMemory uniformBufferMemory;
 
 	// Vertex index buffer 
 	const std::vector<uint32_t> indices = 
@@ -371,11 +384,20 @@ private: // methods
 	// Set up UBO descriptor set
 	void initDescriptorSetLayout();
 
+	// Create pool for allocating descriptor sets
+	void initDescriptorPool();
+
+	// Create set of descriptors
+	void initDescriptorSet();
+
 	// Fill the vertex buffer through staging once created
 	void fillVertexBuffer();
 
 	// Fill index buffer through staging once created
 	void fillIndexBuffer();
+
+	// Update uniform buffer based on application state
+	void updateUniformBuffer();
 
 	// Choose the best available type of GPU memory
 	static uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, VkPhysicalDevice& physicalDevice);
