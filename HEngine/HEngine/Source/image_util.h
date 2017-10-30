@@ -1,10 +1,10 @@
 /* Utilities for dealing with images. Uses STB: https://github.com/nothings/stb */
 
-#include <stb_image.h>
+#pragma once
+#include <string>
+
+#include "image.h"
 
 namespace ImageUtil
 {
-
-	
-
 };

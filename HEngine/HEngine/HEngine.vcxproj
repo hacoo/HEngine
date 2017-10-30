@@ -19,11 +19,13 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Source\image.cpp" />
     <ClCompile Include="Source\image_util.cpp" />
     <ClCompile Include="Source\main.cpp" />
     <ClCompile Include="Source\VulkanApplication.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Source\image.h" />
     <ClInclude Include="Source\image_util.h" />
     <ClInclude Include="Source\render_types.h" />
     <ClInclude Include="Source\typedefs.h" />
