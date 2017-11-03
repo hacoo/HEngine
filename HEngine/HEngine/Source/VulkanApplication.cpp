@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <fstream>
 
+#include "image.h"
+
 void VulkanApplication::run()
 {
 
@@ -27,6 +29,7 @@ void VulkanApplication::run()
 	initCommandPools();
 	initVertexBuffers();
 	initIndexBuffers();
+	createTextureImage();
 	initUniformBuffer();
 	initDescriptorPool();
 	initDescriptorSet();
@@ -1000,6 +1003,50 @@ void VulkanApplication::initDescriptorSet()
 	vkUpdateDescriptorSets(device, 1, &descWrite, 0, nullptr);
 }
 
+void VulkanApplication::createTextureImage()
+{
+	STB_RGBA_Image image("Content/Textures/statue.jpg");
+	textureStagingBufferSize = image.width * image.height * image.components;
+
+	std::vector<uint32_t> queues = {
+static_cast<uint32_t>(queueIndices.graphics)
+	};
+
+	if (!createVkBuffer(textureStagingBuffer,
+		textureStagingMemory,
+		device,
+		physicalDevice,
+		textureStagingBufferSize,
+		queues,
+		VK_SHARING_MODE_EXCLUSIVE,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+	{
+		throw std::runtime_error("Failed to create texture staging buffer");
+	}
+	
+	if (!createVkImage(textureImage,
+		textureImageMemory,
+		device,
+		physicalDevice,
+		image.width,
+		image.height,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+
+	{
+		throw std::runtime_error("Failed to create texture image");
+	}
+
+	// Transfer image to staging:
+	void* data;
+	vkMapMemory(device, textureStagingMemory, 0, textureStagingBufferSize, 0, &data);
+	memcpy(data, image.data(), textureStagingBufferSize);
+	vkUnmapMemory(device, textureStagingMemory);
+}
+
 void VulkanApplication::recreateSwapchain()
 {
 	vkDeviceWaitIdle(device);
@@ -1282,21 +1329,7 @@ VkExtent2D VulkanApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
 
 void VulkanApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
 {
-	// Create a temporary command buffer for the copy op:
-	VkCommandBufferAllocateInfo allocInfo = { };
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandPool = transferCommandPool;
-	allocInfo.commandBufferCount = 1;
-
-	VkCommandBuffer commandBuffer;
-	vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-
-	VkCommandBufferBeginInfo beginInfo = { };
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	VkCommandBuffer commandBuffer = createSingleTimeCommandBuffer(transferCommandPool);
 
 	VkBufferCopy copyRegion = { };
 	copyRegion.srcOffset = 0;
@@ -1305,20 +1338,7 @@ void VulkanApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDev
 
 	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-	vkEndCommandBuffer(commandBuffer);
-
-	// Submit on transfer queue:
-	VkSubmitInfo submitInfo = { };
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
-
-	vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
-	
-	// Wait for the transfer to complete. If there were multiple transfers, it would
-	// be a good idea to use a fence and wait on all of them; this allows more 
-	// driver optimization	
-	vkQueueWaitIdle(graphicsQueue);
+	executeSingleTimeCommandBuffer(commandBuffer, transferQueue, transferCommandPool);
 }
 
 bool VulkanApplication::createVkBuffer(VkBuffer& buffer,
@@ -1359,6 +1379,99 @@ bool VulkanApplication::createVkBuffer(VkBuffer& buffer,
 
 	vkBindBufferMemory(device, buffer, memory, 0);
 	return true;
+}
+
+
+bool VulkanApplication::createVkImage(VkImage& image,
+	VkDeviceMemory& memory,
+	VkDevice& device,
+	VkPhysicalDevice& physicalDevice,
+	size_t width,
+	size_t height,
+	VkFormat format,
+	VkImageTiling tiling,
+	VkImageUsageFlags usageFlags,
+	VkMemoryPropertyFlags memPropFlags)
+{	
+	VkImageCreateInfo imageInfo = { };
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.extent.width = static_cast<uint32_t>(width);
+	imageInfo.extent.height = static_cast<uint32_t>(height);
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = format;
+
+	// Controls layout of pixels. OPTMIAL allows driver to choose
+	imageInfo.tiling = tiling;
+
+	// Pixels aren't defined to start
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	imageInfo.usage = usageFlags;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.flags = 0;
+
+	if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS)
+	{
+		return false;
+	}
+
+	// Now, allocate memory for the imagex
+	VkMemoryRequirements memRequirements;
+	vkGetImageMemoryRequirements(device, image, &memRequirements);
+	
+	VkMemoryAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physicalDevice);
+	
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS) 
+	{
+		return false;
+	}
+	
+	vkBindImageMemory(device, image, memory, 0);
+
+	return true;
+}
+
+VkCommandBuffer VulkanApplication::createSingleTimeCommandBuffer(VkCommandPool& commandPool)
+{
+	VkCommandBufferAllocateInfo allocInfo = { };
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = commandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+	VkCommandBufferBeginInfo beginInfo = { };
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	
+	return commandBuffer;
+}
+
+void VulkanApplication::executeSingleTimeCommandBuffer(VkCommandBuffer commandBuffer,
+	VkQueue& queue, VkCommandPool& commandPool)
+{
+	vkEndCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo = { };
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue);
+
+	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
 bool VulkanApplication::checkDeviceExtensionSupport(const VkPhysicalDevice& device) const
@@ -1621,6 +1734,13 @@ void VulkanApplication::cleanup()
 	vkDestroyBuffer(device, uniformBuffer, nullptr);
 	vkFreeMemory(device, uniformBufferMemory, nullptr);
 		
+	vkDestroyBuffer(device, textureStagingBuffer, nullptr);
+	vkFreeMemory(device, textureImageMemory, nullptr);
+
+	// Clean up textures
+	vkDestroyImage(device, textureImage, nullptr);
+	vkFreeMemory(device, textureImageMemory, nullptr);
+
 	// Clean up synchro stuff
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);
 	vkDestroySemaphore(device, renderFinishedSem, nullptr);

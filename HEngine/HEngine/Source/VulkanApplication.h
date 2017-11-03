@@ -287,7 +287,7 @@ protected: // data
 	VkBuffer vertexStagingBuffer;
 	VkDeviceMemory vertexStagingMemory;
 
-	// 
+	// Holds shader uniform params
 	size_t uinformBufferSize;
 	VkBuffer uniformBuffer;
 	VkDeviceMemory uniformBufferMemory;
@@ -306,6 +306,15 @@ protected: // data
 	size_t indexStagingBufferSize;
 	VkBuffer indexStagingBuffer;
 	VkDeviceMemory indexStagingMemory;
+
+	// For loading textures onto the card
+	size_t textureStagingBufferSize;
+	VkBuffer textureStagingBuffer;
+	VkDeviceMemory textureStagingMemory;
+
+	// Texture stuff:
+	VkImage textureImage;
+	VkDeviceMemory textureImageMemory;
 
 	// Framebuffers
 	std::vector <VkFramebuffer> swapchainFramebuffers;
@@ -396,6 +405,8 @@ private: // methods
 	// Fill index buffer through staging once created
 	void fillIndexBuffer();
 
+	void createTextureImage();
+
 	// Update uniform buffer based on application state
 	void updateUniformBuffer();
 
@@ -445,6 +456,25 @@ private: // methods
 		VkSharingMode sharingMode,
 		VkBufferUsageFlags usageFlags,
 		VkMemoryPropertyFlags memFlags);
+
+	// Create a vulkan Image texture
+	static bool createVkImage(VkImage& image,
+		VkDeviceMemory& memory,
+		VkDevice& device,
+		VkPhysicalDevice& physicalDevice,
+		size_t width,
+		size_t height,
+		VkFormat format,
+		VkImageTiling tiling,
+		VkImageUsageFlags usageFlags,
+		VkMemoryPropertyFlags memPropFlags);
+
+	// Create a command buffer that is executed once
+	VkCommandBuffer createSingleTimeCommandBuffer(VkCommandPool& commandPool);
+
+	// Execute a single-time command buffer once commands are recorded.
+	// Execution is synchronous and will wait until the specified queue idles	
+	void executeSingleTimeCommandBuffer(VkCommandBuffer commandBuffer, VkQueue& queue, VkCommandPool& commandPool);
 
 	// Callbacks:
 
