@@ -64,7 +64,7 @@ void VulkanApplication::initWindow()
 	// glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
 	// First nullptr would specify which monitor. Second is OpenGL-specific.
-	window = glfwCreateWindow(width, height, "Hello, Triangle!", nullptr, nullptr);
+	window = glfwCreateWindow(windowWidth, windowHeight, "Hello, Triangle!", nullptr, nullptr);
 
 	// Register size-change callback
 	glfwSetWindowUserPointer(window, this);
@@ -796,7 +796,7 @@ void VulkanApplication::fillIndexBuffer()
 	vkUnmapMemory(device, indexStagingMemory);
 
 	// Copy into device memory
-	copyBuffer(indexStagingBuffer, indexBuffer, indexStagingBufferSize);
+	assert(copyBuffer(indexStagingBuffer, indexBuffer, indexStagingBufferSize));
 }
 
 void VulkanApplication::fillVertexBuffer()
@@ -818,7 +818,7 @@ void VulkanApplication::fillVertexBuffer()
 	vkUnmapMemory(device, vertexStagingMemory);
 
 	// Copy into device memory
-	copyBuffer(vertexStagingBuffer, vertexBuffer, vertexStagingBufferSize);
+	assert(copyBuffer(vertexStagingBuffer, vertexBuffer, vertexStagingBufferSize));
 }
 
 void VulkanApplication::initCommandBuffers()
@@ -1006,10 +1006,14 @@ void VulkanApplication::initDescriptorSet()
 void VulkanApplication::createTextureImage()
 {
 	STB_RGBA_Image image("Content/Textures/statue.jpg");
-	textureStagingBufferSize = image.width * image.height * image.components;
+	// size_t textureStagingBufferSize = image.width * image.height * image.components;
+	// Multiply by 4 for rgba
+	size_t textureStagingBufferSize = image.width * image.height * 4;
+	VkBuffer textureStagingBuffer;
+	VkDeviceMemory textureStagingMemory;
 
 	std::vector<uint32_t> queues = {
-static_cast<uint32_t>(queueIndices.graphics)
+static_cast<uint32_t>(queueIndices.transfer)
 	};
 
 	if (!createVkBuffer(textureStagingBuffer,
@@ -1035,16 +1039,62 @@ static_cast<uint32_t>(queueIndices.graphics)
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
-
 	{
 		throw std::runtime_error("Failed to create texture image");
 	}
 
 	// Transfer image to staging:
 	void* data;
-	vkMapMemory(device, textureStagingMemory, 0, textureStagingBufferSize, 0, &data);
+	if (vkMapMemory(device, textureStagingMemory, 0, textureStagingBufferSize, 0, &data) != VK_SUCCESS)
+	{
+		assert(false && "Failed to map vulkan memory");
+	}
+
 	memcpy(data, image.data(), textureStagingBufferSize);
 	vkUnmapMemory(device, textureStagingMemory);
+
+	if (!transitionImageLayout(
+		textureImage,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		0, // source is read-only
+		VK_ACCESS_TRANSFER_WRITE_BIT, // Will write to destination
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, // Source is available immediately
+		VK_PIPELINE_STAGE_TRANSFER_BIT // dest is available after transfer stage
+	))
+	{
+		throw std::runtime_error("Image layout transition failed");
+	}
+
+	if (!copyBufferToImage(
+		textureStagingBuffer,
+		textureImage,
+		static_cast<uint32_t>(image.width),
+		static_cast<uint32_t>(image.height)
+	))
+	{
+		throw std::runtime_error("Failed to copy buffer to image");
+	}
+
+	// transition layout for use with shader:
+	if (!transitionImageLayout(
+		textureImage,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_ACCESS_TRANSFER_WRITE_BIT, // Source is written in transfer stage
+		VK_ACCESS_SHADER_READ_BIT, // dest is read by frag shader
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+	))
+	{
+		throw std::runtime_error("Image layout transition failed");
+	}
+
+	// Delete staging buffer, no longer needed:
+	vkDestroyBuffer(device, textureStagingBuffer, nullptr);
+	vkFreeMemory(device, textureStagingMemory, nullptr);
 }
 
 void VulkanApplication::recreateSwapchain()
@@ -1086,6 +1136,90 @@ void VulkanApplication::updateUniformBuffer()
 	vkMapMemory(device, uniformBufferMemory, 0, sizeof(ubo), 0, &data);
 	memcpy(data, &ubo, sizeof(ubo));
 	vkUnmapMemory(device, uniformBufferMemory);
+}
+
+bool VulkanApplication::transitionImageLayout(
+	VkImage image, 
+	VkFormat format,
+	VkImageLayout oldLayout,
+	VkImageLayout newLayout,
+	VkAccessFlags srcAccessMask,
+	VkAccessFlags dstAccessMask,
+	VkPipelineStageFlags srcStage,
+	VkPipelineStageFlags dstStage
+	)
+{
+	VkCommandBuffer commandBuffer;
+
+	if (!createSingleTimeCommandBuffer(graphicsCommandPool, commandBuffer))
+	{
+		return false;
+	}
+   
+	VkImageMemoryBarrier barrier = { };
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = oldLayout;
+	barrier.newLayout = newLayout;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	
+	barrier.image = image;
+   
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.srcAccessMask = srcAccessMask;
+	barrier.dstAccessMask = dstAccessMask;
+	
+	vkCmdPipelineBarrier(
+		commandBuffer,
+		srcStage, dstStage,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier
+	);
+	
+	return executeSingleTimeCommandBuffer(commandBuffer, graphicsQueue, graphicsCommandPool);
+}
+
+bool VulkanApplication::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+{
+	VkBufferImageCopy region = {};
+	region.bufferOffset = 0;
+	region.bufferRowLength = 0;
+	region.bufferImageHeight = 0;
+	
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.mipLevel = 0;
+	region.imageSubresource.baseArrayLayer = 0;
+	region.imageSubresource.layerCount = 1;
+	
+	region.imageOffset = { 0, 0, 0 };
+	region.imageExtent = {
+width,
+height,
+1
+	};
+
+	VkCommandBuffer commandBuffer;
+	if (!createSingleTimeCommandBuffer(transferCommandPool, commandBuffer))
+	{
+		return false;
+	}
+
+	vkCmdCopyBufferToImage(
+		commandBuffer,
+		buffer,
+		image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1,
+		&region
+	);
+	
+	return executeSingleTimeCommandBuffer(commandBuffer, transferQueue, transferCommandPool);
 }
 
 uint32_t VulkanApplication::findMemoryType(uint32_t typeFilter,
@@ -1327,9 +1461,14 @@ VkExtent2D VulkanApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
 	return extent;
 }
 
-void VulkanApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+bool VulkanApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
 {
-	VkCommandBuffer commandBuffer = createSingleTimeCommandBuffer(transferCommandPool);
+	VkCommandBuffer commandBuffer;
+
+	if (!createSingleTimeCommandBuffer(transferCommandPool, commandBuffer))
+	{
+		return false;
+	}
 
 	VkBufferCopy copyRegion = { };
 	copyRegion.srcOffset = 0;
@@ -1338,7 +1477,7 @@ void VulkanApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDev
 
 	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-	executeSingleTimeCommandBuffer(commandBuffer, transferQueue, transferCommandPool);
+	return executeSingleTimeCommandBuffer(commandBuffer, transferQueue, transferCommandPool);
 }
 
 bool VulkanApplication::createVkBuffer(VkBuffer& buffer,
@@ -1438,7 +1577,7 @@ bool VulkanApplication::createVkImage(VkImage& image,
 	return true;
 }
 
-VkCommandBuffer VulkanApplication::createSingleTimeCommandBuffer(VkCommandPool& commandPool)
+bool VulkanApplication::createSingleTimeCommandBuffer(VkCommandPool& commandPool, VkCommandBuffer& outCommandBuffer)
 {
 	VkCommandBufferAllocateInfo allocInfo = { };
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -1446,19 +1585,25 @@ VkCommandBuffer VulkanApplication::createSingleTimeCommandBuffer(VkCommandPool& 
 	allocInfo.commandPool = commandPool;
 	allocInfo.commandBufferCount = 1;
 
-	VkCommandBuffer commandBuffer;
-	vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+	if (vkAllocateCommandBuffers(device, &allocInfo, &outCommandBuffer) != VK_SUCCESS)
+	{
+		return false;
+	}
 
 	VkCommandBufferBeginInfo beginInfo = { };
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	if (vkBeginCommandBuffer(outCommandBuffer, &beginInfo) != VK_SUCCESS)
+	{
+		vkFreeCommandBuffers(device, commandPool, 1, &outCommandBuffer);
+		return false;
+	}
 	
-	return commandBuffer;
+	return true;
 }
 
-void VulkanApplication::executeSingleTimeCommandBuffer(VkCommandBuffer commandBuffer,
+bool VulkanApplication::executeSingleTimeCommandBuffer(VkCommandBuffer commandBuffer,
 	VkQueue& queue, VkCommandPool& commandPool)
 {
 	vkEndCommandBuffer(commandBuffer);
@@ -1468,10 +1613,21 @@ void VulkanApplication::executeSingleTimeCommandBuffer(VkCommandBuffer commandBu
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
 
-	vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-	vkQueueWaitIdle(queue);
+	if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+	{
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		return false;
+	}
+
+	if (vkQueueWaitIdle(queue) != VK_SUCCESS)
+	{
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		return false;
+	}
 
 	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+
+	return true;
 }
 
 bool VulkanApplication::checkDeviceExtensionSupport(const VkPhysicalDevice& device) const
@@ -1734,9 +1890,6 @@ void VulkanApplication::cleanup()
 	vkDestroyBuffer(device, uniformBuffer, nullptr);
 	vkFreeMemory(device, uniformBufferMemory, nullptr);
 		
-	vkDestroyBuffer(device, textureStagingBuffer, nullptr);
-	vkFreeMemory(device, textureImageMemory, nullptr);
-
 	// Clean up textures
 	vkDestroyImage(device, textureImage, nullptr);
 	vkFreeMemory(device, textureImageMemory, nullptr);

@@ -56,8 +56,8 @@ public: // methods
 	VulkanApplication()
 		:
 		window(nullptr),
-		width(800),
-		height(600),
+		windowWidth(800),
+		windowHeight(600),
 		physicalDevice(VK_NULL_HANDLE)
 	{ }
 
@@ -224,8 +224,8 @@ protected: // classes
 protected: // data
 
 	GLFWwindow* window;
-	uint32_t width = 800;
-	uint32_t height = 600;
+	uint32_t windowWidth = 800;
+	uint32_t windowHeight = 600;
 
 	// Vulkan stuff:
 	VkInstance instance;
@@ -306,11 +306,6 @@ protected: // data
 	size_t indexStagingBufferSize;
 	VkBuffer indexStagingBuffer;
 	VkDeviceMemory indexStagingMemory;
-
-	// For loading textures onto the card
-	size_t textureStagingBufferSize;
-	VkBuffer textureStagingBuffer;
-	VkDeviceMemory textureStagingMemory;
 
 	// Texture stuff:
 	VkImage textureImage;
@@ -444,7 +439,7 @@ private: // methods
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
  
 	// Copy GPU memory around
-	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+	bool copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 	// Create a Vulkan buffer and corresponding memory. Returns true on success, false on failure.
 	static bool createVkBuffer(VkBuffer& buffer,
@@ -458,7 +453,8 @@ private: // methods
 		VkMemoryPropertyFlags memFlags);
 
 	// Create a vulkan Image texture
-	static bool createVkImage(VkImage& image,
+	static bool createVkImage(
+		VkImage& image,
 		VkDeviceMemory& memory,
 		VkDevice& device,
 		VkPhysicalDevice& physicalDevice,
@@ -467,14 +463,32 @@ private: // methods
 		VkFormat format,
 		VkImageTiling tiling,
 		VkImageUsageFlags usageFlags,
-		VkMemoryPropertyFlags memPropFlags);
+		VkMemoryPropertyFlags memPropFlags
+	);
 
 	// Create a command buffer that is executed once
-	VkCommandBuffer createSingleTimeCommandBuffer(VkCommandPool& commandPool);
+	bool createSingleTimeCommandBuffer(VkCommandPool& commandPool, VkCommandBuffer& outCommandBuffer);
 
 	// Execute a single-time command buffer once commands are recorded.
 	// Execution is synchronous and will wait until the specified queue idles	
-	void executeSingleTimeCommandBuffer(VkCommandBuffer commandBuffer, VkQueue& queue, VkCommandPool& commandPool);
+	bool executeSingleTimeCommandBuffer(
+		VkCommandBuffer commandBuffer,
+		VkQueue& queue,
+		VkCommandPool& commandPool
+	);
+
+	bool transitionImageLayout(
+		VkImage image,
+		VkFormat format,
+		VkImageLayout oldLayout,
+		VkImageLayout newLayout,
+		VkAccessFlags srcAccessMask,
+		VkAccessFlags dstAccessMask,
+		VkPipelineStageFlags srcStage,
+		VkPipelineStageFlags dstStage
+	);
+
+	bool copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
 	// Callbacks:
 

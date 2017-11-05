@@ -22,7 +22,9 @@ STB_RGBA_Image::STB_RGBA_Image(const std::string& load_path)
 	Image(Image::PixelType::RGBA)
 {
 	int w, h, c;
-	pixels = stbi_load(load_path.c_str(), &w, &h, &c, 0);
+
+	// Set req_comp=4, we want RGBA
+	pixels = stbi_load(load_path.c_str(), &w, &h, &c, 4);
 
 	if (!pixels)
 	{
@@ -42,7 +44,11 @@ STB_RGBA_Image::STB_RGBA_Image(const STB_RGBA_Image& other)
 	components(other.components)
 {
 	int h, w, c;
-	pixels = stbi_load_from_memory((const stbi_uc*)other.pixels, (int)width * (int)height * (int)components, &w, &h, &c, 0);
+	pixels = stbi_load_from_memory((const stbi_uc*)other.pixels, (int)width * (int)height * (int)components, &w, &h, &c, 4);
+	width = static_cast<size_t>(w);
+	height = static_cast<size_t>(h);
+	components = static_cast<size_t>(c);
+
 }
 
 STB_RGBA_Image::STB_RGBA_Image(STB_RGBA_Image&& rhs)
@@ -67,6 +73,10 @@ STB_RGBA_Image& STB_RGBA_Image::operator=(const STB_RGBA_Image& other)
 
 	int h, w, c;
 	pixels = stbi_load_from_memory((const stbi_uc*)other.pixels, (int)width * (int)height * (int)components, &w, &h, &c, 0);
+
+	width = static_cast<size_t>(w);
+	height = static_cast<size_t>(h);
+	components = static_cast<size_t>(c);
 
 	return *this;
 }
@@ -100,4 +110,3 @@ void* STB_RGBA_Image::data()
 {
 	return (void*) pixels;
 }
-
