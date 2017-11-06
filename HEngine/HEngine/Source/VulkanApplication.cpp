@@ -237,7 +237,8 @@ queueIndices.transfer
 	};
 
 	float queuePriority = 1.0f;
-	for (int queueFamily : uniqueQueueFamilies) {
+	for (int queueFamily : uniqueQueueFamilies) 
+	{
 		VkDeviceQueueCreateInfo queueCreateInfo = {};
 		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 		queueCreateInfo.queueFamilyIndex = queueFamily;
@@ -247,8 +248,9 @@ queueIndices.transfer
 	}
 
 	// Create the logical device
-	// Device features we want to use. For now, everything is turned off.
+	// Device features we want to use: 
 	VkPhysicalDeviceFeatures deviceFeatures = { };
+	deviceFeatures.samplerAnisotropy = VK_TRUE;
 		
 	VkDeviceCreateInfo deviceCreateInfo = { };
 	deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -938,10 +940,19 @@ void VulkanApplication::initDescriptorSetLayout()
 	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	uboLayoutBinding.pImmutableSamplers = nullptr;
 
+	VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
+	samplerLayoutBinding.binding = 1;
+	samplerLayoutBinding.descriptorCount = 1;
+	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding.pImmutableSamplers = nullptr;
+	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	std::vector<VkDescriptorSetLayoutBinding> bindings = { uboLayoutBinding, samplerLayoutBinding };
+
 	VkDescriptorSetLayoutCreateInfo layoutInfo = { };
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &uboLayoutBinding;
+	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+	layoutInfo.pBindings = bindings.data();
 
 	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
 	{
@@ -951,14 +962,17 @@ void VulkanApplication::initDescriptorSetLayout()
 
 void VulkanApplication::initDescriptorPool()
 {
-	VkDescriptorPoolSize poolSize = { };
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSize.descriptorCount = 1;
+	std::array <VkDescriptorPoolSize, 2> poolSizes;
+
+	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizes[0].descriptorCount = 1;
+	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	poolSizes[1].descriptorCount = 1;
 
 	VkDescriptorPoolCreateInfo poolInfo = { };
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
 	poolInfo.maxSets = 1;
 
 	if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
@@ -989,18 +1003,36 @@ void VulkanApplication::initDescriptorSet()
 	bufferInfo.offset = 0;
 	bufferInfo.range = sizeof(UniformBufferObject);
 
-	VkWriteDescriptorSet descWrite = { };
-	descWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descWrite.dstSet = descriptorSet;
-	descWrite.dstBinding = 0;
-	descWrite.dstArrayElement = 0;
-	descWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	descWrite.descriptorCount = 1;
-	descWrite.pBufferInfo = &bufferInfo;
-	descWrite.pImageInfo = nullptr;
-	descWrite.pTexelBufferView = nullptr;
+	VkDescriptorImageInfo imageInfo = {};
+	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	imageInfo.imageView = textureImageView;
+	imageInfo.sampler = textureImageSampler;
 
-	vkUpdateDescriptorSets(device, 1, &descWrite, 0, nullptr);
+	std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
+	
+	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[0].dstSet = descriptorSet;
+	descriptorWrites[0].dstBinding = 0;
+	descriptorWrites[0].dstArrayElement = 0;
+	descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorWrites[0].descriptorCount = 1;
+	descriptorWrites[0].pBufferInfo = &bufferInfo;
+	
+	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[1].dstSet = descriptorSet;
+	descriptorWrites[1].dstBinding = 1;
+	descriptorWrites[1].dstArrayElement = 0;
+	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[1].descriptorCount = 1;
+	descriptorWrites[1].pImageInfo = &imageInfo;
+
+	vkUpdateDescriptorSets(
+		device,
+		static_cast<uint32_t>(descriptorWrites.size()),
+		descriptorWrites.data(),
+		0,
+		nullptr
+	);
 }
 
 void VulkanApplication::createTextureImage()
@@ -1095,6 +1127,50 @@ static_cast<uint32_t>(queueIndices.transfer)
 	// Delete staging buffer, no longer needed:
 	vkDestroyBuffer(device, textureStagingBuffer, nullptr);
 	vkFreeMemory(device, textureStagingMemory, nullptr);
+
+	// Create the image view:
+	if (!createVkImageView(textureImage, VK_FORMAT_R8G8B8A8_UNORM, textureImageView))
+	{
+		throw std::runtime_error("Could not create texture image view");
+	}
+
+	// Create a sampler for the texture:
+
+	VkSamplerCreateInfo samplerInfo = { };
+	
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+	// Mag is for oversampled textures -- more fragments than texels
+	samplerInfo.magFilter = VK_FILTER_LINEAR;
+	// Min is for undersampled textures -- more texels than fragments
+	samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+	// How to sample image if dimensions are exceeded
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+	// Anisotropic filtering settings are easy :)
+	samplerInfo.anisotropyEnable = VK_TRUE;
+	samplerInfo.maxAnisotropy = 16;
+
+	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	
+	// If false, coordinates are normalized; they must go [0, 1)
+	samplerInfo.unnormalizedCoordinates = VK_FALSE; 
+
+	samplerInfo.compareEnable = VK_FALSE;
+	samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	samplerInfo.mipLodBias = 0.0f;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+
+	if (vkCreateSampler(device, &samplerInfo, nullptr, &textureImageSampler) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Could not create texture image sampler");
+	}
 }
 
 void VulkanApplication::recreateSwapchain()
@@ -1276,6 +1352,11 @@ uint32_t VulkanApplication::calcSuitabilityScore(const VkPhysicalDevice& device,
 		return 0;
 	}
 
+	if (!deviceFeatures.samplerAnisotropy)
+	{
+		return 0;
+	}
+
 	// check swap chain support
 	SwapChainSupportInfo swapchainSupportInfo;
 	swapchainSupportInfo.initialize(device, surface);
@@ -1317,6 +1398,8 @@ std::string VulkanApplication::getDeviceDescriptionString(const VkPhysicalDevice
 	sstream << "  Tesselation shaders supported: "
 		<< (deviceFeatures.tessellationShader ? "Yes" : "No")
 		<< std::endl;
+	sstream << "  Sampler anisotropy: " << 
+		(deviceFeatures.samplerAnisotropy ? "Yes" : "No") << std::endl;
 	sstream << "  Suitability score: " << calcSuitabilityScore(device, surface) << std::endl;
 
 	return sstream.str();
@@ -1575,6 +1658,27 @@ bool VulkanApplication::createVkImage(VkImage& image,
 	vkBindImageMemory(device, image, memory, 0);
 
 	return true;
+}
+
+bool VulkanApplication::createVkImageView(VkImage image, VkFormat format, VkImageView& outImageView)
+{
+	VkImageViewCreateInfo viewInfo = {};
+	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewInfo.image = textureImage;
+	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	viewInfo.subresourceRange.baseMipLevel = 0;
+	viewInfo.subresourceRange.levelCount = 1;
+	viewInfo.subresourceRange.baseArrayLayer = 0;
+	viewInfo.subresourceRange.layerCount = 1;
+
+	if (vkCreateImageView(device, &viewInfo, nullptr, &outImageView) != VK_SUCCESS)
+	{		
+		return false;
+    }
+
+    return true;
 }
 
 bool VulkanApplication::createSingleTimeCommandBuffer(VkCommandPool& commandPool, VkCommandBuffer& outCommandBuffer)
@@ -1893,6 +1997,8 @@ void VulkanApplication::cleanup()
 	// Clean up textures
 	vkDestroyImage(device, textureImage, nullptr);
 	vkFreeMemory(device, textureImageMemory, nullptr);
+	vkDestroyImageView(device, textureImageView, nullptr);
+	vkDestroySampler(device, textureImageSampler, nullptr);
 
 	// Clean up synchro stuff
 	vkDestroySemaphore(device, imageAvailableSem, nullptr);
@@ -1937,3 +2043,4 @@ std::vector<char> VulkanApplication::readFileBytes(const std::string& filename)
 
 	return buffer;
 }
+

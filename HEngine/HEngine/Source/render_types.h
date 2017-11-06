@@ -9,5 +9,6 @@
 struct Vertex2D
 {
 	glm::vec2 pos;
-	glm::vec3 color;		
+	glm::vec3 color;	
+	glm::vec2 texCoord;
 };

@@ -268,12 +268,11 @@ protected: // data
 	// Vertex buffer
 	const std::vector<Vertex2D> vertices = 
 	{
-{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 	};
-
 
 	// Vertex buffers hold actual vertices to draw
 	size_t vertexBufferSize;
@@ -310,6 +309,9 @@ protected: // data
 	// Texture stuff:
 	VkImage textureImage;
 	VkDeviceMemory textureImageMemory;
+	VkImageView textureImageView;
+	VkSampler textureImageSampler;
+
 
 	// Framebuffers
 	std::vector <VkFramebuffer> swapchainFramebuffers;
@@ -487,6 +489,8 @@ private: // methods
 		VkPipelineStageFlags srcStage,
 		VkPipelineStageFlags dstStage
 	);
+
+	bool createVkImageView(VkImage image, VkFormat format, VkImageView& outImageView);
 
 	bool copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
