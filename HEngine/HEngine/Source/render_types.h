@@ -5,10 +5,10 @@
 
 #include <glm/glm.hpp>
 
-// Render-able 2d vertex
-struct Vertex2D
+// Render-able 3D vertex
+struct Vertex3D
 {
-	glm::vec2 pos;
+	glm::vec3 pos;
 	glm::vec3 color;	
 	glm::vec2 texCoord;
 };

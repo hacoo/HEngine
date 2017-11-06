@@ -58,7 +58,8 @@ public: // methods
 		window(nullptr),
 		windowWidth(800),
 		windowHeight(600),
-		physicalDevice(VK_NULL_HANDLE)
+		physicalDevice(VK_NULL_HANDLE),
+		depthImageFormat(VK_FORMAT_D32_SFLOAT_S8_UINT)
 	{ }
 
 	~VulkanApplication()
@@ -266,12 +267,17 @@ protected: // data
 	VkPipeline graphicsPipeline;
 
 	// Vertex buffer
-	const std::vector<Vertex2D> vertices = 
+	const std::vector<Vertex3D> vertices = 
 	{
-{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
 	};
 
 	// Vertex buffers hold actual vertices to draw
@@ -294,7 +300,8 @@ protected: // data
 	// Vertex index buffer 
 	const std::vector<uint32_t> indices = 
 	{
-		0, 1, 2, 2, 3, 0
+0, 1, 2, 2, 3, 0,
+4, 5, 6, 6, 7, 4
 	};
 
 	// Index buffer holds indices of vertices used in triangles
@@ -305,6 +312,12 @@ protected: // data
 	size_t indexStagingBufferSize;
 	VkBuffer indexStagingBuffer;
 	VkDeviceMemory indexStagingMemory;
+
+	// Depth buffer:
+	VkImage depthImage;
+	VkDeviceMemory depthMemory;
+	VkImageView depthImageView;
+	VkFormat depthImageFormat;
 
 	// Texture stuff:
 	VkImage textureImage;
@@ -371,6 +384,9 @@ private: // methods
 
 	// Set up command pool
 	void initCommandPools();
+
+	// Set up depth buffer
+	void initDepthResources();
 
 	// Set up vertex buffers
 	void initVertexBuffers();
@@ -490,7 +506,12 @@ private: // methods
 		VkPipelineStageFlags dstStage
 	);
 
-	bool createVkImageView(VkImage image, VkFormat format, VkImageView& outImageView);
+	bool createVkImageView(
+		VkImage image,
+		VkFormat format,
+		VkImageAspectFlags aspectFlags,
+		VkImageView& outImageView
+	);
 
 	bool copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
