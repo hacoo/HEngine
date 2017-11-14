@@ -50,5 +50,9 @@ int main()
 #endif
 	*/
 
+	std::cout << "Shutdown complete. " << std::endl;
+
+	Sleep(5000);
+
 	return retcode == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

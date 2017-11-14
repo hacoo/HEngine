@@ -41,6 +41,7 @@ const std::vector<const char*> validationLayers =
 const std::vector<const char*> deviceExtensions =
 {
 VK_KHR_SWAPCHAIN_EXTENSION_NAME
+// , VK_EXT_DEBUG_MARKER_EXTENSION_NAME
 };
 
 #ifdef NDEBUG
@@ -59,7 +60,7 @@ public: // methods
 		windowWidth(800),
 		windowHeight(600),
 		physicalDevice(VK_NULL_HANDLE),
-		depthImageFormat(VK_FORMAT_D32_SFLOAT_S8_UINT)
+		depthImageFormat(VK_FORMAT_D32_SFLOAT)
 	{ }
 
 	~VulkanApplication()
@@ -267,18 +268,7 @@ protected: // data
 	VkPipeline graphicsPipeline;
 
 	// Vertex buffer
-	const std::vector<Vertex3D> vertices = 
-	{
-{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-	};
+	std::vector<Vertex3D> vertices;
 
 	// Vertex buffers hold actual vertices to draw
 	size_t vertexBufferSize;
@@ -298,11 +288,7 @@ protected: // data
 	VkDeviceMemory uniformBufferMemory;
 
 	// Vertex index buffer 
-	const std::vector<uint32_t> indices = 
-	{
-0, 1, 2, 2, 3, 0,
-4, 5, 6, 6, 7, 4
-	};
+	std::vector<uint32_t> indices;
 
 	// Index buffer holds indices of vertices used in triangles
 	size_t indexBufferSize;
@@ -411,6 +397,8 @@ private: // methods
 
 	// Create set of descriptors
 	void initDescriptorSet();
+
+	void loadModel();
 
 	// Fill the vertex buffer through staging once created
 	void fillVertexBuffer();

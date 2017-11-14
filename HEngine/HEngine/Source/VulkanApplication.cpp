@@ -6,12 +6,16 @@
 #include <fstream>
 
 #include "image.h"
+#include "obj_util.h"
 
 void VulkanApplication::run()
 {
 
 	// Create glfw window
 	initWindow();
+
+	std::cout << "Loading assets..." << std::endl;
+	loadModel();	
 
 	// Vulkan setup
 	std::cout << "Initializing Vulkan..." << std::endl;
@@ -28,8 +32,10 @@ void VulkanApplication::run()
 	initCommandPools();
 	initDepthResources();
 	initFramebuffers();
+
 	initVertexBuffers();
 	initIndexBuffers();
+
 	createTextureImage();
 	initUniformBuffer();
 	initDescriptorPool();
@@ -370,7 +376,7 @@ void VulkanApplication::initImageViews()
 	swapchainViews.resize(swapchainImages.size());
 
 	for (size_t i = 0; i < swapchainViews.size(); ++i)
-	{
+	{		
 		VkImageViewCreateInfo createInfo = { };
 		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		createInfo.image = swapchainImages[i];
@@ -420,6 +426,7 @@ void VulkanApplication::createRenderPass()
 	colorAttachmentRefInfo.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 	// Set up depth buffer:
+
 	VkAttachmentDescription depthAttachment = {};
 	depthAttachment.format = depthImageFormat;
 	depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -452,7 +459,9 @@ void VulkanApplication::createRenderPass()
 	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
+	// std::array<VkAttachmentDescription, 1> attachments = { colorAttachment };
 	std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+
 
 	VkRenderPassCreateInfo renderPassInfo = { };
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -550,6 +559,7 @@ void VulkanApplication::initGraphicsPipeline()
 	// Cull back-facing triangles
 	rasterizerInfo.cullMode = VK_CULL_MODE_BACK_BIT;
 	rasterizerInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	//rasterizerInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
 	// Depth bias -- usually used to resolve z-layering issues on coplanar geometry, e.g., shadows
 	// I.e., you'd give everything in the shadow buffer a small bias
@@ -808,10 +818,40 @@ static_cast<uint32_t>(queueIndices.transfer)
 	}
 }
 
+void VulkanApplication::loadModel()
+{
+	/*
+		std::string path = "Content/Models/chalet.obj";
+		if (!ObjUtil::loadObj(path, vertices, indices))
+		{
+			throw std::runtime_error("Failed to load model at path: " + path);
+		}
+	*/
+
+	vertices = {
+{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
+	};
+
+	indices = {
+0, 1, 2, 2, 3, 0,
+4, 5, 6, 6, 7, 4
+	};
+
+}
+
+#pragma optimize("gtsy", off)
 void VulkanApplication::fillIndexBuffer()
 {
 	void* data;
-
+	std::cout << "DOING!!" << std::endl;
 	// Transfer to staging memory first:
 	vkMapMemory(device, indexStagingMemory, 0, 
 		static_cast<VkDeviceSize>(indexStagingBufferSize), 0, &data);
@@ -823,18 +863,20 @@ void VulkanApplication::fillIndexBuffer()
 	// COHERENT bit. 
 	//
 	// Similarly, if reading memory, you would need to call vkInvalidateMappedMemoryRanges before
-	// reading, if the memory is not coherent.	
+	// reading, if the memory is not coherent.
 
 	vkUnmapMemory(device, indexStagingMemory);
 
 	// Copy into device memory
 	assert(copyBuffer(indexStagingBuffer, indexBuffer, indexStagingBufferSize));
 }
+#pragma optimize("gtsy", on)
 
+#pragma optimize("gtsy", off)
 void VulkanApplication::fillVertexBuffer()
 {
 	void* data;
-
+	std::cout << "BOING!!" << std::endl;
 	// Transfer to staging memory first:
 	vkMapMemory(device, vertexStagingMemory, 0, static_cast<VkDeviceSize>(vertexStagingBufferSize), 0, &data);
 
@@ -852,6 +894,7 @@ void VulkanApplication::fillVertexBuffer()
 	// Copy into device memory
 	assert(copyBuffer(vertexStagingBuffer, vertexBuffer, vertexStagingBufferSize));
 }
+#pragma optimize("gtsy", on)
 
 void VulkanApplication::initCommandBuffers()
 {
@@ -1258,6 +1301,7 @@ void VulkanApplication::recreateSwapchain()
 	initImageViews();
 	createRenderPass();
 	initGraphicsPipeline();
+	initDepthResources();
 	initFramebuffers();
 	initCommandBuffers();
 }
@@ -1272,11 +1316,10 @@ void VulkanApplication::updateUniformBuffer()
 	UniformBufferObject ubo = { };	
 	ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
-	// View is above origin at 45 degree angle
-	ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	// 45 degree vertical FOV, aspect ratio as per window size, near plane at 1.0, far at 10.0
-	ubo.proj = glm::perspective(glm::radians(45.0f), swapchainExtent.width / (float)swapchainExtent.height, 1.0f, 10.0f);
+	ubo.proj = glm::perspective(glm::radians(45.0f), swapchainExtent.width / (float)swapchainExtent.height, 0.1f, 10.0f);
 
 	// In openGL, y-coordinate of clip is inverted. GLM expects this
 	ubo.proj[1][1] *= -1;
@@ -1702,6 +1745,7 @@ bool VulkanApplication::createVkImage(VkImage& image,
 	VkMemoryPropertyFlags memPropFlags)
 {	
 	VkImageCreateInfo imageInfo = { };
+
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;
 	imageInfo.extent.width = static_cast<uint32_t>(width);
@@ -1958,7 +2002,7 @@ void VulkanApplication::drawFrame()
 		// Something changed, and the swapchain is no longer compatible -- recreate it
 		recreateSwapchain();
 	}
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+ 	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
 	{
 		throw std::runtime_error("could not get next swapchain image");
 	}
@@ -2026,7 +2070,6 @@ void VulkanApplication::drawFrame()
 	presentInfo.pResults = nullptr;
 	
 	vkQueuePresentKHR(presentQueue, &presentInfo);
-
 }
 
 void VulkanApplication::cleanupSwapchain()
